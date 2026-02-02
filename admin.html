@@ -7,18 +7,17 @@
   <style>
     :root { --green:#2c6e49; --green2:#3d8b63; --bg:#f7f7f7; }
     body { font-family: Arial, sans-serif; margin: 24px; background: var(--bg); }
-    .container { max-width: 1000px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+    .container { max-width: 1100px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
     h1 { margin: 0 0 8px; color:var(--green); font-size: 24px; }
     .toplinks { display:flex; gap:10px; margin-bottom:16px; }
     .toplinks a { color: var(--green); text-decoration:none; font-size:14px; }
-    .row { display:grid; grid-template-columns: repeat(3,1fr); gap:16px; margin: 16px 0; }
-    .card { background:#f4f4f4; border-radius:10px; padding:16px; }
+    .card { background:#f4f4f4; border-radius:10px; padding:16px; margin:16px 0; }
     .card h3 { margin:0 0 8px; font-size:16px; }
-    .pill { display:inline-block; background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; margin:4px 6px 0 0; font-size:12px; }
     table { width:100%; border-collapse: collapse; }
     th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; }
     th { background:#fafafa; }
     .small { font-size:12px; color:#666; }
+    .counts { font-weight:bold; }
     .btn { display:inline-block; padding:10px 12px; background:var(--green); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
     .btn:hover { background:var(--green2); }
   </style>
@@ -31,31 +30,25 @@
   <h1>Admin Dashboard</h1>
   <div class="small" id="updatedAt">Loading…</div>
 
-  <div class="row">
-    <div class="card">
-      <h3>8–10 AM</h3>
-      <div id="p8_10_count">—</div>
-      <div id="p8_10_names"></div>
-    </div>
-    <div class="card">
-      <h3>12–2 PM</h3>
-      <div id="p12_2_count">—</div>
-      <div id="p12_2_names"></div>
-    </div>
-    <div class="card">
-      <h3>6–10 PM</h3>
-      <div id="p6_10_count">—</div>
-      <div id="p6_10_names"></div>
-    </div>
+  <div class="card">
+    <h3>Next Week — Practice Availability (Sun–Fri)</h3>
+    <div class="small" id="weekRangeNote">—</div>
+    <table id="weekTable">
+      <thead>
+        <tr>
+          <th>Day</th>
+          <th>Date</th>
+          <th>8–10 AM (count)</th>
+          <th>12–2 PM (count)</th>
+          <th>6–10 PM (count)</th>
+          <th>Players</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </div>
 
-  <div class="card" style="margin:16px 0;">
-    <h3>Suggested Practice Plan (2 per week)</h3>
-    <div id="suggested"></div>
-    <div class="small">Picks the two time windows with the most unique available players based on latest submissions.</div>
-  </div>
-
-  <div class="card" style="margin:16px 0;">
+  <div class="card">
     <h3>Saturday Game Availability</h3>
     <div class="small">From next Saturday through end of May 2026</div>
     <table id="gamesTable">
@@ -75,14 +68,22 @@
 
 <script>
   // ====== CONFIG ======
-  const API_URL = "https://script.google.com/macros/s/AKfycby0IuJ4705OwS2CM2henGcK_3wnvfoJ6xIarL8TQLlG1uRJaNt-HdkPtMxh-iC_3D1s/exec";
+  const API_URL = "https://script.google.com/macros/s/AKfycby0IuJ4705OwS2CM2henGcK_3wnvfoJ6xIarL8TQLlG1uRJaNt-HdkPtMxh-iC_3D1s/exec"; // e.g., your Cloudflare Worker URL
 
-  // ====== Utilities ======
+  // ====== Date helpers ======
   function ymd(d) {
     const y = d.getFullYear();
     const m = String(d.getMonth()+1).padStart(2,'0');
     const dd = String(d.getDate()).padStart(2,'0');
     return `${y}-${m}-${dd}`;
+  }
+  function startOfNextWeek() {
+    const d = new Date();
+    const day = d.getDay(); // 0=Sun
+    const add = (7 - day) % 7 || 7;
+    d.setDate(d.getDate() + add);
+    d.setHours(0,0,0,0);
+    return d;
   }
   function nextSaturday(fromDate) {
     const d = new Date(fromDate);
@@ -92,19 +93,18 @@
     d.setHours(0,0,0,0);
     return d;
   }
-  function saturdaysThroughMay() {
-    const today = new Date();
+  function saturdaysThroughMay2026() {
     const end = new Date(2026, 4, 31);
-    const list = [];
-    let cur = nextSaturday(today);
+    const out = [];
+    let cur = nextSaturday(new Date());
     while (cur <= end) {
-      list.push(new Date(cur));
+      out.push(new Date(cur));
       cur.setDate(cur.getDate() + 7);
     }
-    return list;
+    return out;
   }
 
-  // ====== Data load ======
+  // ====== Fetch ======
   async function fetchAll() {
     const res = await fetch(API_URL, {
       method: 'POST',
@@ -114,55 +114,72 @@
     return res.json();
   }
 
-  function reduceLatestByPlayer(rows) {
-    // Latest submission per player for practice windows
-    const latest = new Map(); // player -> row
+  // ====== Aggregations ======
+  function latestPracticeByPlayerDate(rows) {
+    // Map key: player|date (Practice Date), only Type='practice'
+    const map = new Map();
     rows.forEach(r => {
+      const type = (r['Type'] || '').toString().toLowerCase();
+      if (type !== 'practice') return;
       const player = (r['Player'] || '').toString().trim();
-      if (!player) return;
+      const date = (r['Practice Date'] || '').toString().trim();
+      if (!player || !date) return;
       const ts = new Date(r['Timestamp']).getTime() || 0;
-      if (!latest.has(player) || ts > latest.get(player)._ts) {
-        const rec = {
+      const key = `${player}|${date}`;
+      const curr = map.get(key);
+      if (!curr || ts > curr.ts) {
+        map.set(key, {
+          ts,
           p810: r['Practice: 8-10 AM'] ? true : false,
           p122: r['Practice: 12-2 PM'] ? true : false,
           p610: r['Practice: 6-10 PM'] ? true : false,
-          _ts: ts
-        };
-        latest.set(player, rec);
+          day: (r['Day'] || '').toString().trim()
+        });
       }
     });
-    return latest;
+    return map;
   }
 
-  function aggregatePractice(latestMap) {
-    const P = { p810: new Set(), p122: new Set(), p610: new Set() };
-    latestMap.forEach((rec, player) => {
-      if (rec.p810) P.p810.add(player);
-      if (rec.p122) P.p122.add(player);
-      if (rec.p610) P.p610.add(player);
+  function aggregateWeek(map, start) {
+    // Build Sun–Fri dates
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri'];
+    const week = [];
+    for (let i=0; i<6; i++) {
+      const d = new Date(start); d.setDate(start.getDate()+i);
+      week.push({ label: days[i], iso: ymd(d), names810: new Set(), names122: new Set(), names610: new Set() });
+    }
+    // Fill sets
+    map.forEach((rec, key) => {
+      const [player, date] = key.split('|');
+      const w = week.find(x => x.iso === date);
+      if (!w) return; // Only show next week
+      if (rec.p810) w.names810.add(player);
+      if (rec.p122) w.names122.add(player);
+      if (rec.p610) w.names610.add(player);
     });
-    return P;
+    return week;
   }
 
-  function aggregateGames(rows) {
-    // latest per (player, date)
-    const latestMap = new Map(); // key `${player}|${date}` -> available ('Yes' or '')
+  function latestGameByPlayerDate(rows) {
+    const map = new Map();
     rows.forEach(r => {
+      const type = (r['Type'] || '').toString().toLowerCase();
+      if (type !== 'game') return;
       const player = (r['Player'] || '').toString().trim();
       const date = (r['Game Date'] || '').toString().trim();
       if (!player || !date) return;
       const ts = new Date(r['Timestamp']).getTime() || 0;
       const key = `${player}|${date}`;
-      const current = latestMap.get(key);
-      if (!current || ts > current.ts) {
-        latestMap.set(key, { available: (r['Available for Game?'] || '').toString().trim(), ts });
+      const curr = map.get(key);
+      if (!curr || ts > curr.ts) {
+        map.set(key, { ts, yes: ((r['Available for Game?'] || '').toString().trim().toLowerCase() === 'yes') });
       }
     });
-
-    const byDate = new Map(); // date -> Set(players)
-    latestMap.forEach((v, key) => {
+    // By date
+    const byDate = new Map();
+    map.forEach((rec, key) => {
       const [player, date] = key.split('|');
-      if (v.available.toLowerCase() === 'yes') {
+      if (rec.yes) {
         if (!byDate.has(date)) byDate.set(date, new Set());
         byDate.get(date).add(player);
       }
@@ -170,68 +187,44 @@
     return byDate;
   }
 
-  function renderPractice(P) {
-    const c1 = document.getElementById('p8_10_count');
-    const n1 = document.getElementById('p8_10_names');
-    const c2 = document.getElementById('p12_2_count');
-    const n2 = document.getElementById('p12_2_names');
-    const c3 = document.getElementById('p6_10_count');
-    const n3 = document.getElementById('p6_10_names');
+  // ====== Render ======
+  function renderWeek(week, start) {
+    const tb = document.querySelector('#weekTable tbody');
+    tb.innerHTML = '';
+    const end = new Date(start); end.setDate(start.getDate()+5);
+    document.getElementById('weekRangeNote').textContent =
+      `${start.toLocaleDateString(undefined,{month:'short',day:'numeric'})} – ${end.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
 
-    c1.textContent = `${P.p810.size} available`;
-    c2.textContent = `${P.p122.size} available`;
-    c3.textContent = `${P.p610.size} available`;
-
-    function pills(set) {
-      const frag = document.createDocumentFragment();
-      [...set].sort().forEach(name => {
-        const span = document.createElement('span');
-        span.className = 'pill';
-        span.textContent = name;
-        frag.appendChild(span);
-      });
-      return frag;
-    }
-    n1.innerHTML = ''; n1.appendChild(pills(P.p810));
-    n2.innerHTML = ''; n2.appendChild(pills(P.p122));
-    n3.innerHTML = ''; n3.appendChild(pills(P.p610));
+    week.forEach(day => {
+      const players = new Set([...day.names810, ...day.names122, ...day.names610]);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${day.label}</td>
+        <td>${new Date(day.iso + 'T00:00:00').toLocaleDateString(undefined, { month:'short', day:'numeric' })}</td>
+        <td class="counts">${day.names810.size}</td>
+        <td class="counts">${day.names122.size}</td>
+        <td class="counts">${day.names610.size}</td>
+        <td>${[...players].sort().join(', ')}</td>
+      `;
+      tb.appendChild(tr);
+    });
   }
 
   function renderGames(byDate) {
     const tb = document.querySelector('#gamesTable tbody');
     tb.innerHTML = '';
-    // Ensure all Saturdays appear, even if zero availability yet
-    const allSats = saturdaysThroughMay().map(d => ymd(d));
+    const allSats = saturdaysThroughMay2026().map(d => ymd(d));
     allSats.forEach(date => {
       const players = byDate.get(date) ? [...byDate.get(date)].sort() : [];
       const tr = document.createElement('tr');
-      const td1 = document.createElement('td');
-      const td2 = document.createElement('td');
-      const td3 = document.createElement('td');
       const human = new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' });
-      td1.textContent = human;
-      td2.textContent = players.length.toString();
-      td3.textContent = players.join(', ');
-      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+      tr.innerHTML = `
+        <td>${human}</td>
+        <td class="counts">${players.length}</td>
+        <td>${players.join(', ')}</td>
+      `;
       tb.appendChild(tr);
     });
-  }
-
-  function renderSuggestion(P) {
-    // Pick top 2 windows by count
-    const arr = [
-      { key:'8–10 AM', count:P.p810.size },
-      { key:'12–2 PM', count:P.p122.size },
-      { key:'6–10 PM', count:P.p610.size }
-    ].sort((a,b) => b.count - a.count);
-
-    const suggestion = document.getElementById('suggested');
-    if (arr[0].count === 0 && arr[1].count === 0 && arr[2].count === 0) {
-      suggestion.textContent = 'No availability yet.';
-      return;
-    }
-    const picks = arr.slice(0,2).filter(x => x.count > 0);
-    suggestion.innerHTML = picks.map(p => `• ${p.key} (${p.count} available)`).join('<br/>');
   }
 
   async function refresh() {
@@ -239,14 +232,19 @@
     try {
       const json = await fetchAll();
       const rows = (json && json.rows) ? json.rows : [];
-      const latest = reduceLatestByPlayer(rows);
-      const P = aggregatePractice(latest);
-      const G = aggregateGames(rows);
 
-      renderPractice(P);
-      renderSuggestion(P);
-      renderGames(G);
-      document.getElementById('updatedAt').textContent = `Updated: ${new Date(json.updatedAt || Date.now()).toLocaleString()}`;
+      // Practice aggregation for next week
+      const start = startOfNextWeek();
+      const latestMap = latestPracticeByPlayerDate(rows);
+      const week = aggregateWeek(latestMap, start);
+      renderWeek(week, start);
+
+      // Games aggregation
+      const gamesByDate = latestGameByPlayerDate(rows);
+      renderGames(gamesByDate);
+
+      document.getElementById('updatedAt').textContent =
+        `Updated: ${new Date(json.updatedAt || Date.now()).toLocaleString()}`;
     } catch (e) {
       document.getElementById('updatedAt').textContent = 'Failed to load data.';
     }
