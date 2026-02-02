@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Pickleball Admin Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --green:#2c6e49; --green2:#3d8b63; --bg:#f7f7f7; }
+    body { font-family: Arial, sans-serif; margin: 24px; background: var(--bg); }
+    .container { max-width: 1000px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+    h1 { margin: 0 0 8px; color:var(--green); font-size: 24px; }
+    .toplinks { display:flex; gap:10px; margin-bottom:16px; }
+    .toplinks a { color: var(--green); text-decoration:none; font-size:14px; }
+    .row { display:grid; grid-template-columns: repeat(3,1fr); gap:16px; margin: 16px 0; }
+    .card { background:#f4f4f4; border-radius:10px; padding:16px; }
+    .card h3 { margin:0 0 8px; font-size:16px; }
+    .pill { display:inline-block; background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; margin:4px 6px 0 0; font-size:12px; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; }
+    th { background:#fafafa; }
+    .small { font-size:12px; color:#666; }
+    .btn { display:inline-block; padding:10px 12px; background:var(--green); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
+    .btn:hover { background:var(--green2); }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="toplinks">
+    <a href="./index.html">← Player Form</a>
+  </div>
+  <h1>Admin Dashboard</h1>
+  <div class="small" id="updatedAt">Loading…</div>
+
+  <div class="row">
+    <div class="card">
+      <h3>8–10 AM</h3>
+      <div id="p8_10_count">—</div>
+      <div id="p8_10_names"></div>
+    </div>
+    <div class="card">
+      <h3>12–2 PM</h3>
+      <div id="p12_2_count">—</div>
+      <div id="p12_2_names"></div>
+    </div>
+    <div class="card">
+      <h3>6–10 PM</h3>
+      <div id="p6_10_count">—</div>
+      <div id="p6_10_names"></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin:16px 0;">
+    <h3>Suggested Practice Plan (2 per week)</h3>
+    <div id="suggested"></div>
+    <div class="small">Picks the two time windows with the most unique available players based on latest submissions.</div>
+  </div>
+
+  <div class="card" style="margin:16px 0;">
+    <h3>Saturday Game Availability</h3>
+    <div class="small">From next Saturday through end of May 2026</div>
+    <table id="gamesTable">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th># Available</th>
+          <th>Players</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <button class="btn" id="refreshBtn">Refresh</button>
+</div>
+
+<script>
+  // ====== CONFIG ======
+  const API_URL = "https://script.google.com/macros/s/AKfycby0IuJ4705OwS2CM2henGcK_3wnvfoJ6xIarL8TQLlG1uRJaNt-HdkPtMxh-iC_3D1s/exec";
+
+  // ====== Utilities ======
+  function ymd(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dd}`;
+  }
+  function nextSaturday(fromDate) {
+    const d = new Date(fromDate);
+    const day = d.getDay();
+    const offset = (6 - day + 7) % 7 || 7;
+    d.setDate(d.getDate() + offset);
+    d.setHours(0,0,0,0);
+    return d;
+  }
+  function saturdaysThroughMay() {
+    const today = new Date();
+    const end = new Date(2026, 4, 31);
+    const list = [];
+    let cur = nextSaturday(today);
+    while (cur <= end) {
+      list.push(new Date(cur));
+      cur.setDate(cur.getDate() + 7);
+    }
+    return list;
+  }
+
+  // ====== Data load ======
+  async function fetchAll() {
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'read' })
+    });
+    return res.json();
+  }
+
+  function reduceLatestByPlayer(rows) {
+    // Latest submission per player for practice windows
+    const latest = new Map(); // player -> row
+    rows.forEach(r => {
+      const player = (r['Player'] || '').toString().trim();
+      if (!player) return;
+      const ts = new Date(r['Timestamp']).getTime() || 0;
+      if (!latest.has(player) || ts > latest.get(player)._ts) {
+        const rec = {
+          p810: r['Practice: 8-10 AM'] ? true : false,
+          p122: r['Practice: 12-2 PM'] ? true : false,
+          p610: r['Practice: 6-10 PM'] ? true : false,
+          _ts: ts
+        };
+        latest.set(player, rec);
+      }
+    });
+    return latest;
+  }
+
+  function aggregatePractice(latestMap) {
+    const P = { p810: new Set(), p122: new Set(), p610: new Set() };
+    latestMap.forEach((rec, player) => {
+      if (rec.p810) P.p810.add(player);
+      if (rec.p122) P.p122.add(player);
+      if (rec.p610) P.p610.add(player);
+    });
+    return P;
+  }
+
+  function aggregateGames(rows) {
+    // latest per (player, date)
+    const latestMap = new Map(); // key `${player}|${date}` -> available ('Yes' or '')
+    rows.forEach(r => {
+      const player = (r['Player'] || '').toString().trim();
+      const date = (r['Game Date'] || '').toString().trim();
+      if (!player || !date) return;
+      const ts = new Date(r['Timestamp']).getTime() || 0;
+      const key = `${player}|${date}`;
+      const current = latestMap.get(key);
+      if (!current || ts > current.ts) {
+        latestMap.set(key, { available: (r['Available for Game?'] || '').toString().trim(), ts });
+      }
+    });
+
+    const byDate = new Map(); // date -> Set(players)
+    latestMap.forEach((v, key) => {
+      const [player, date] = key.split('|');
+      if (v.available.toLowerCase() === 'yes') {
+        if (!byDate.has(date)) byDate.set(date, new Set());
+        byDate.get(date).add(player);
+      }
+    });
+    return byDate;
+  }
+
+  function renderPractice(P) {
+    const c1 = document.getElementById('p8_10_count');
+    const n1 = document.getElementById('p8_10_names');
+    const c2 = document.getElementById('p12_2_count');
+    const n2 = document.getElementById('p12_2_names');
+    const c3 = document.getElementById('p6_10_count');
+    const n3 = document.getElementById('p6_10_names');
+
+    c1.textContent = `${P.p810.size} available`;
+    c2.textContent = `${P.p122.size} available`;
+    c3.textContent = `${P.p610.size} available`;
+
+    function pills(set) {
+      const frag = document.createDocumentFragment();
+      [...set].sort().forEach(name => {
+        const span = document.createElement('span');
+        span.className = 'pill';
+        span.textContent = name;
+        frag.appendChild(span);
+      });
+      return frag;
+    }
+    n1.innerHTML = ''; n1.appendChild(pills(P.p810));
+    n2.innerHTML = ''; n2.appendChild(pills(P.p122));
+    n3.innerHTML = ''; n3.appendChild(pills(P.p610));
+  }
+
+  function renderGames(byDate) {
+    const tb = document.querySelector('#gamesTable tbody');
+    tb.innerHTML = '';
+    // Ensure all Saturdays appear, even if zero availability yet
+    const allSats = saturdaysThroughMay().map(d => ymd(d));
+    allSats.forEach(date => {
+      const players = byDate.get(date) ? [...byDate.get(date)].sort() : [];
+      const tr = document.createElement('tr');
+      const td1 = document.createElement('td');
+      const td2 = document.createElement('td');
+      const td3 = document.createElement('td');
+      const human = new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+      td1.textContent = human;
+      td2.textContent = players.length.toString();
+      td3.textContent = players.join(', ');
+      tr.appendChild(td1); tr.appendChild(td2); tr.appendChild(td3);
+      tb.appendChild(tr);
+    });
+  }
+
+  function renderSuggestion(P) {
+    // Pick top 2 windows by count
+    const arr = [
+      { key:'8–10 AM', count:P.p810.size },
+      { key:'12–2 PM', count:P.p122.size },
+      { key:'6–10 PM', count:P.p610.size }
+    ].sort((a,b) => b.count - a.count);
+
+    const suggestion = document.getElementById('suggested');
+    if (arr[0].count === 0 && arr[1].count === 0 && arr[2].count === 0) {
+      suggestion.textContent = 'No availability yet.';
+      return;
+    }
+    const picks = arr.slice(0,2).filter(x => x.count > 0);
+    suggestion.innerHTML = picks.map(p => `• ${p.key} (${p.count} available)`).join('<br/>');
+  }
+
+  async function refresh() {
+    document.getElementById('updatedAt').textContent = 'Loading…';
+    try {
+      const json = await fetchAll();
+      const rows = (json && json.rows) ? json.rows : [];
+      const latest = reduceLatestByPlayer(rows);
+      const P = aggregatePractice(latest);
+      const G = aggregateGames(rows);
+
+      renderPractice(P);
+      renderSuggestion(P);
+      renderGames(G);
+      document.getElementById('updatedAt').textContent = `Updated: ${new Date(json.updatedAt || Date.now()).toLocaleString()}`;
+    } catch (e) {
+      document.getElementById('updatedAt').textContent = 'Failed to load data.';
+    }
+  }
+
+  document.getElementById('refreshBtn').addEventListener('click', refresh);
+  refresh();
+</script>
+</body>
+</html>

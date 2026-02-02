@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Pickleball Team Availability</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root { --green:#2c6e49; --green2:#3d8b63; --bg:#f7f7f7; }
+    body { font-family: Arial, sans-serif; margin: 24px; background: var(--bg); }
+    .container { max-width: 720px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+    h1 { margin: 0 0 12px; color:var(--green); font-size: 24px; }
+    .toplinks { display:flex; gap:10px; margin-bottom:16px; }
+    .toplinks a { color: var(--green); text-decoration:none; font-size:14px; }
+    .section { margin: 18px 0; padding: 16px; background:#f4f4f4; border-radius:10px; }
+    label { font-weight: bold; }
+    select, input[type="text"] { width:100%; padding:10px; margin-top:8px; border:1px solid #ccc; border-radius:8px; font-size:14px; }
+    .checks { display:grid; grid-template-columns: 1fr; gap:10px; margin-top:10px; }
+    .checks label { font-weight:normal; display:flex; align-items:center; gap:10px; }
+    button { width:100%; padding:14px; background:var(--green); color:#fff; border:none; border-radius:10px; font-size:16px; cursor:pointer; }
+    button:hover { background:var(--green2); }
+    .note { font-size: 12px; color:#666; }
+    .success { color:#0a7d33; font-weight:bold; }
+    .error { color:#b00020; font-weight:bold; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <div class="toplinks">
+    <a href="./admin.html">Go to Admin Dashboard →</a>
+  </div>
+  <h1>Pickleball Team Availability</h1>
+  <p class="note">Select your name, choose practice windows (you can select multiple), and mark availability for an upcoming Saturday game.</p>
+
+  <div class="section">
+    <label for="player">Player Name</label>
+    <select id="player">
+      <option value="">Loading roster…</option>
+    </select>
+    <div id="rosterFallback" class="note" style="display:none;">
+      Couldn’t load the roster. You can type your name:
+      <input type="text" id="playerText" placeholder="Your name" />
+    </div>
+  </div>
+
+  <div class="section">
+    <label>Practice Availability (select all that apply)</label>
+    <div class="checks">
+      <label><input type="checkbox" id="p1" /> 8–10 AM</label>
+      <label><input type="checkbox" id="p2" /> 12–2 PM</label>
+      <label><input type="checkbox" id="p3" /> 6–10 PM</label>
+    </div>
+  </div>
+
+  <div class="section">
+    <label for="gameday">Saturday Game Date</label>
+    <select id="gameday">
+      <option value="">Pick a Saturday…</option>
+    </select>
+    <div class="checks" style="margin-top:12px;">
+      <label><input type="checkbox" id="gameAvailable" /> I am available for this game</label>
+    </div>
+    <div class="note">Range: next Saturday through end of May 2026.</div>
+  </div>
+
+  <button id="submitBtn">Submit Availability</button>
+  <p id="statusMsg" class="note" style="margin-top:12px;"></p>
+</div>
+
+<script>
+  // ====== CONFIG ======
+  const API_URL = "https://script.google.com/macros/s/AKfycby0IuJ4705OwS2CM2henGcK_3wnvfoJ6xIarL8TQLlG1uRJaNt-HdkPtMxh-iC_3D1s/exec";
+
+  // ====== UTIL: Saturdays from next Saturday to May 31, 2026 ======
+  function getNextSaturday(fromDate) {
+    const d = new Date(fromDate);
+    const day = d.getDay(); // 0 Sun ... 6 Sat
+    const offset = (6 - day + 7) % 7 || 7; // next Saturday (not today even if Sat)
+    d.setDate(d.getDate() + offset);
+    d.setHours(0,0,0,0);
+    return d;
+  }
+  function listSaturdaysThroughMay() {
+    const today = new Date();
+    const end = new Date(2026, 4, 31); // May is month 4 (0-based)
+    const sats = [];
+    let cur = getNextSaturday(today);
+    while (cur <= end) {
+      sats.push(new Date(cur));
+      cur.setDate(cur.getDate() + 7);
+    }
+    return sats;
+  }
+  function ymd(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth()+1).padStart(2,'0');
+    const dd = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${dd}`;
+  }
+
+  // ====== Populate Saturdays ======
+  function populateGameDates() {
+    const sel = document.getElementById('gameday');
+    sel.innerHTML = `<option value="">Pick a Saturday…</option>`;
+    listSaturdaysThroughMay().forEach(date => {
+      const v = ymd(date);
+      const opt = document.createElement('option');
+      opt.value = v;
+      opt.textContent = date.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+      sel.appendChild(opt);
+    });
+  }
+
+  // ====== Roster load ======
+  async function loadRoster() {
+    const playerSel = document.getElementById('player');
+    const fallback = document.getElementById('rosterFallback');
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'roster' })
+      });
+      const json = await res.json();
+      let roster = (json && json.roster) ? json.roster : [];
+      playerSel.innerHTML = `<option value="">Select…</option>`;
+      if (!roster.length) {
+        fallback.style.display = 'block';
+      } else {
+        roster.forEach(name => {
+          const opt = document.createElement('option');
+          opt.value = name;
+          opt.textContent = name;
+          playerSel.appendChild(opt);
+        });
+        // Keep the manual fallback hidden if roster exists
+        fallback.style.display = 'none';
+      }
+    } catch (e) {
+      // Fallback to manual entry
+      playerSel.innerHTML = `<option value="">(Roster unavailable)</option>`;
+      fallback.style.display = 'block';
+    }
+  }
+
+  // ====== Submit ======
+  async function submitAvailability() {
+    const status = document.getElementById('statusMsg');
+    status.textContent = '';
+
+    const playerSel = document.getElementById('player');
+    const playerText = document.getElementById('playerText');
+    let player = playerSel.value || (playerText ? playerText.value.trim() : '');
+
+    if (!player) {
+      status.innerHTML = '<span class="error">Please select or enter your name.</span>';
+      return;
+    }
+
+    const data = {
+      action: 'submit',
+      player,
+      practice_8_10: document.getElementById('p1').checked ? 'Yes' : '',
+      practice_12_2: document.getElementById('p2').checked ? 'Yes' : '',
+      practice_6_10: document.getElementById('p3').checked ? 'Yes' : '',
+      game_date: document.getElementById('gameday').value || '',
+      game_available: document.getElementById('gameAvailable').checked ? 'Yes' : ''
+    };
+
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(data)
+      });
+      const json = await res.json();
+      if (json.status === 'success') {
+        status.innerHTML = '<span class="success">Availability submitted. Thanks!</span>';
+        // Reset only game selection; keep practice prefs if they’re weekly
+        document.getElementById('gameday').value = '';
+        document.getElementById('gameAvailable').checked = false;
+      } else {
+        status.innerHTML = '<span class="error">There was a problem submitting. Try again.</span>';
+      }
+    } catch (e) {
+      status.innerHTML = '<span class="error">Network error. Please try again.</span>';
+    }
+  }
+
+  // Init
+  populateGameDates();
+  loadRoster();
+  document.getElementById('submitBtn').addEventListener('click', submitAvailability);
+</script>
+</body>
+</html>
