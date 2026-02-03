@@ -22,9 +22,9 @@
     .btn { display:inline-block; padding:10px 12px; background:var(--green); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
     .btn:hover { background:var(--green2); }
     .pill { display:inline-block; background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; margin:4px 6px 0 0; font-size:12px; }
-    .inline { display:flex; gap:10px; align-items:center; }
+    .inline { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
     .badge { display:inline-block; background:#eef7f0; color:#2c6e49; padding:4px 10px; border-radius:999px; font-size:12px; margin-left:8px; }
-    select, input[type="text"], input[type="date"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
+    select, input[type="text"], input[type="date"], input[type="time"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
   </style>
 </head>
 <body>
@@ -77,6 +77,7 @@
       <label>Season Start: <input type="date" id="seasonStart"></label>
       <label>Season End: <input type="date" id="seasonEnd"></label>
       <button class="btn" id="saveSeason">Save Season</button>
+      <button class="btn" id="seedNow">Seed Saturdays Now</button>
     </div>
     <div class="small" style="margin-top:8px;">Set Saturdays (Bye or Start: 06:45 / 08:20 / TOURNAMENT)</div>
     <table id="gamedaysTable" style="margin-top:10px;">
@@ -87,6 +88,25 @@
       </thead>
       <tbody></tbody>
     </table>
+  </div>
+
+  <div class="card">
+    <h3>Add Ad‑hoc Game (any date)</h3>
+    <div class="inline small">
+      <label>Date: <input type="date" id="adhocDate"></label>
+      <label>Start:
+        <select id="adhocStart">
+          <option value=""></option>
+          <option value="06:45">06:45</option>
+          <option value="08:20">08:20</option>
+          <option value="TOURNAMENT">TOURNAMENT</option>
+        </select>
+      </label>
+      <label>Note: <input type="text" id="adhocNote" placeholder="Optional coach note"></label>
+      <label>BYE? <input type="checkbox" id="adhocBye"></label>
+      <button class="btn" id="adhocBtn">Add/Update</button>
+    </div>
+    <div class="small">Tip: Ad‑hoc games are division‑specific and can be any weekday/time.</div>
   </div>
 
   <div class="card">
@@ -281,6 +301,8 @@
     const s=document.getElementById('seasonStart').value;
     const e=document.getElementById('seasonEnd').value;
     await api({ action:'savesettings', settings:{ SeasonStart:s, SeasonEnd:e } });
+    // Auto-seed Saturdays for the current division
+    await api({ action:'seedgamedays', division: DIVISION });
     await refresh();
   }
 
@@ -324,6 +346,17 @@
     });
   }
 
+  // ====== Ad-hoc game handler ======
+  async function addAdhoc(){
+    const date = (document.getElementById('adhocDate').value||'').trim();
+    const start = document.getElementById('adhocStart').value;
+    const coachNote = document.getElementById('adhocNote').value||'';
+    const isBye = document.getElementById('adhocBye').checked;
+    if (!date) return;
+    await api({ action:'adhocgame', division: DIVISION, date, start, coachNote, isBye });
+    await refresh();
+  }
+
   // ====== Refresh all ======
   async function refresh(){
     document.getElementById('divBadge').textContent=`Division ${DIVISION}`;
@@ -350,6 +383,7 @@
     refresh();
   });
   document.getElementById('saveSeason').addEventListener('click', saveSeason);
+  document.getElementById('seedNow').addEventListener('click', async ()=>{ await api({ action:'seedgamedays', division: DIVISION }); await refresh(); });
   document.getElementById('addPlayerBtn').addEventListener('click', async ()=>{
     const name=document.getElementById('newPlayer').value.trim();
     const div=document.getElementById('newDivision').value;
@@ -358,6 +392,7 @@
     document.getElementById('newPlayer').value='';
     await refresh();
   });
+  document.getElementById('adhocBtn').addEventListener('click', addAdhoc);
 
   refresh();
 </script>
