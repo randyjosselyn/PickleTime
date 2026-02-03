@@ -81,7 +81,7 @@
     <table id="gamedaysTable" style="margin-top:10px;">
       <thead>
         <tr>
-          <th>Date</th><th>Bye?</th><th>Start</th><th>Action</th>
+             <th>Date</th><th>Bye?</th><th>Start</th><th>Coach Note</th><th>Action</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -232,24 +232,29 @@
     list.forEach(date=>{
       const meta = byDate.get(date) || { IsBye:'No', Start:'' };
       const tr=document.createElement('tr');
-      tr.innerHTML = `
-        <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
-        <td>
-          <select data-date="${date}" data-field="isbye">
-            <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
-            <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
-          </select>
-        </td>
-        <td>
-          <select data-date="${date}" data-field="start" ${meta.IsBye==='Yes'?'disabled':''}>
-            <option value="" ${!meta.Start?'selected':''}></option>
-            <option value="06:45" ${meta.Start==='06:45'?'selected':''}>06:45</option>
-            <option value="08:20" ${meta.Start==='08:20'?'selected':''}>08:20</option>
-            <option value="TOURNAMENT" ${meta.Start==='TOURNAMENT'?'selected':''}>TOURNAMENT</option>
-          </select>
-        </td>
-        <td><button class="btn" data-save="${date}">Save</button></td>
-      `;
+      
+tr.innerHTML = `
+  <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
+  <td>
+    <select data-date="${date}" data-field="isbye">
+      <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
+      <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
+    </select>
+  </td>
+  <td>
+    <select data-date="${date}" data-field="start" ${meta.IsBye==='Yes'?'disabled':''}>
+      <option value="" ${!meta.Start?'selected':''}></option>
+      <option value="06:45" ${meta.Start==='06:45'?'selected':''}>06:45</option>
+      <option value="08:20" ${meta.Start==='08:20'?'selected':''}>08:20</option>
+      <option value="TOURNAMENT" ${meta.Start==='TOURNAMENT'?'selected':''}>TOURNAMENT</option>
+    </select>
+  </td>
+  <td>
+    <input type="text" data-date="${date}" data-field="coach" placeholder="Coach note" value="${meta.CoachNote? meta.CoachNote.replace(/"/g,'&quot;'):''}">
+  </td>
+  <td><button class="btn" data-save="${date}">Save</button></td>
+`;
+
       tb.appendChild(tr);
     });
 
@@ -263,16 +268,23 @@
     });
 
     // Save buttons
-    tb.querySelectorAll('button[data-save]').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const date=btn.getAttribute('data-save');
-        const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
-        const startSel=tb.querySelector(`select[data-field="start"][data-date="${date}"]`);
-        const payload = { action:'setGameDay', date, isBye: isByeSel.value==='Yes', start: startSel.disabled?'':startSel.value };
-        await api(payload);
-        await refresh();
-      });
+tb.querySelectorAll('button[data-save]').forEach(btn=>{
+  btn.addEventListener('click', async ()=>{
+    const date=btn.getAttribute('data-save');
+    const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
+    const startSel=tb.querySelector(`select[data-field="start"][data-date="${date}"]`);
+    const noteInp=tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
+    await api({
+      action:'setGameDay',
+      division: DIVISION,
+      date,
+      isBye: isByeSel.value==='Yes',
+      start: startSel.disabled ? '' : startSel.value,
+      coachNote: noteInp.value || ''
     });
+    await refresh();
+  });
+});
   }
 
   async function saveSeason(){
