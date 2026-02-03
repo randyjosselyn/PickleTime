@@ -116,7 +116,14 @@
   let coachNoteMap = new Map(); // key: YYYY-MM-DD -> note (for this division)
   async function loadSeasonAndGameDays(){
     try{
-      const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'getSettings' }) });
+      
+const res = await fetch(API_URL, {
+  method: 'POST',
+  headers: {'Content-Type': 'text/plain;charset=utf-8'},
+  body: JSON.stringify({ action:'getsettings', division: DIVISION })
+});
+
+      
       const j=await res.json();
       const s=j.settings||{}; const g=j.gamedays||[]; const notes=j.coachNotes||[];
       coachNoteMap = new Map(notes.filter(n => (n.Division||'').toUpperCase()===DIVISION).map(n => [n.Date, n.Note]));
@@ -136,7 +143,14 @@
     saturdaysBetween(startISO,endISO).forEach(date=>{
       const meta=byDate.get(date);
       if(meta && meta.IsBye==='Yes') return;
-      const labelMeta = meta ? (meta.Start==='TOURNAMENT' ? 'TOURNAMENT' : (meta.Start? `${meta.Start} start` : '')) : '';
+      const labelMeta = meta
+  ? (meta.Start==='TOURNAMENT'
+      ? 'TOURNAMENT'
+      : (meta.Start ? `${meta.Start} start` : ''))
+  : '';
+const notePart = meta && meta.CoachNote ? ` — ${meta.CoachNote}` : '';
+const human=new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+opt.textContent = (labelMeta ? `${human} — ${labelMeta}` : human) + notePart;
       const human=new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
       const opt=document.createElement('option');
       opt.value=date; opt.textContent=labelMeta ? `${human} — ${labelMeta}` : human;
