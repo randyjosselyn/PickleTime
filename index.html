@@ -7,10 +7,11 @@
   <style>
     :root { --green:#2c6e49; --green2:#3d8b63; --bg:#f7f7f7; }
     body { font-family: Arial, sans-serif; margin: 24px; background: var(--bg); }
-    .container { max-width: 860px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
-    h1 { margin: 0 0 12px; color:var(--green); font-size: 24px; }
+    .container { max-width: 900px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+    h1 { margin: 0 0 8px; color:var(--green); font-size: 24px; }
     .toplinks { display:flex; gap:10px; margin-bottom:16px; }
     .toplinks a { color: var(--green); text-decoration:none; font-size:14px; }
+    .badge { display:inline-block; background:#eef7f0; color:#2c6e49; padding:4px 10px; border-radius:999px; font-size:12px; margin-left:8px; }
     .section { margin: 18px 0; padding: 16px; background:#f4f4f4; border-radius:10px; }
     label { font-weight: bold; }
     select, input[type="text"] { width:100%; padding:10px; margin-top:8px; border:1px solid #ccc; border-radius:8px; font-size:14px; }
@@ -31,14 +32,12 @@
   <div class="toplinks">
     <a href="./admin.html">Go to Admin Dashboard →</a>
   </div>
-  <h1>Pickleball Team Availability</h1>
+  <h1>Pickleball Team Availability <span id="divBadge" class="badge"></span></h1>
   <p class="note">Select your name, choose practice availability for next week (you can pick multiple windows per day), and optionally mark a Saturday game date.</p>
 
   <div class="section">
     <label for="player">Player Name</label>
-    <select id="player">
-      <option value="">Loading roster…</option>
-    </select>
+    <select id="player"><option value="">Loading roster…</option></select>
     <div id="rosterFallback" class="note" style="display:none;margin-top:8px;">
       Couldn’t load the roster. You can type your name:
       <input type="text" id="playerText" placeholder="Your name" />
@@ -53,9 +52,10 @@
         <tr>
           <th>Day</th>
           <th>Date</th>
+          <th>6–8 AM</th>
           <th>8–10 AM</th>
           <th>12–2 PM</th>
-          <th>6–10 PM</th>
+          <th>7–10 PM</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -64,13 +64,11 @@
 
   <div class="section">
     <label for="gameday">Saturday Game Date</label>
-    <select id="gameday">
-      <option value="">Pick a Saturday…</option>
-    </select>
+    <select id="gameday"><option value="">Pick a Saturday…</option></select>
+    <div class="note" id="gamedayNote"></div>
     <div class="checks" style="margin-top:12px;">
       <label><input type="checkbox" id="gameAvailable" /> I am available for this game</label>
     </div>
-    <div class="note">Range: next Saturday through end of May 2026.</div>
   </div>
 
   <button id="submitBtn">Submit</button>
@@ -79,177 +77,159 @@
 
 <script>
   // ====== CONFIG ======
-  const API_URL = "https://round-fog-5a5e.randyjosselyn.workers.dev/"; // e.g., your Cloudflare Worker URL
+  const API_URL = "https://round-fog-5a5e.randyjosselyn.workers.dev/"; // your Worker URL
+  const urlParams = new URLSearchParams(location.search);
+  const DIVISION = (urlParams.get('div') || 'D4').toUpperCase();
 
-  // ====== Dates helpers ======
-  function startOfNextWeek() {
-    // Next week starting Sunday (Sun–Fri window)
-    const d = new Date();
-    const day = d.getDay(); // 0=Sun..6=Sat
-    const add = (7 - day) % 7 || 7; // move to next Sunday
-    d.setDate(d.getDate() + add);
-    d.setHours(0,0,0,0);
-    return d;
-  }
-  function ymd(d) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth()+1).padStart(2,'0');
-    const dd = String(d.getDate()).padStart(2,'0');
-    return `${y}-${m}-${dd}`;
-  }
-  function formatHuman(d) {
-    return d.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric' });
-  }
-  function nextSaturday(fromDate) {
-    const d = new Date(fromDate);
-    const day = d.getDay();
-    const offset = (6 - day + 7) % 7 || 7;
-    d.setDate(d.getDate() + offset);
-    d.setHours(0,0,0,0);
-    return d;
-  }
-  function saturdaysThroughMay2026() {
-    const end = new Date(2026, 4, 31); // May 31, 2026
-    const list = [];
-    let cur = nextSaturday(new Date());
-    while (cur <= end) {
-      list.push(new Date(cur));
-      cur.setDate(cur.getDate() + 7);
-    }
-    return list;
+  // ====== Date helpers ======
+  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7||7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
+  function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
+  function formatHuman(d){ return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }
+  function nextSaturday(from){ const d=new Date(from); const day=d.getDay(); const off=(6-day+7)%7||7; d.setDate(d.getDate()+off); d.setHours(0,0,0,0); return d; }
+  function saturdaysBetween(startISO, endISO){
+    const out=[]; if(!startISO||!endISO) return out;
+    let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00');
+    let cur=nextSaturday(s);
+    while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); }
+    return out;
   }
 
   // ====== Build week table (Sun–Fri) ======
-  function buildWeekTable() {
-    const tbody = document.querySelector('#weekTable tbody');
-    tbody.innerHTML = '';
-    const start = startOfNextWeek(); // Sunday
-    const days = ['Sun','Mon','Tue','Wed','Thu','Fri'];
-    const rangeNote = document.getElementById('weekRangeNote');
-    const end = new Date(start); end.setDate(start.getDate() + 5);
-    rangeNote.textContent = `(${formatHuman(start)} – ${formatHuman(end)})`;
-
-    for (let i = 0; i < days.length; i++) {
-      const d = new Date(start); d.setDate(start.getDate() + i);
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
+  function buildWeekTable(){
+    const tbody=document.querySelector('#weekTable tbody'); tbody.innerHTML='';
+    const start=startOfNextWeek(); const days=['Sun','Mon','Tue','Wed','Thu','Fri'];
+    const end=new Date(start); end.setDate(start.getDate()+5);
+    document.getElementById('weekRangeNote').textContent=`(${formatHuman(start)} – ${formatHuman(end)})`;
+    for(let i=0;i<6;i++){
+      const d=new Date(start); d.setDate(start.getDate()+i);
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
         <td>${days[i]}</td>
         <td data-date="${ymd(d)}">${formatHuman(d)}</td>
+        <td><input type="checkbox" data-slot="p68"></td>
         <td><input type="checkbox" data-slot="p810"></td>
         <td><input type="checkbox" data-slot="p122"></td>
-        <td><input type="checkbox" data-slot="p610"></td>
+        <td><input type="checkbox" data-slot="p710"></td>
       `;
       tbody.appendChild(tr);
     }
   }
 
-  // ====== Populate Saturdays ======
-  function populateGameDates() {
-    const sel = document.getElementById('gameday');
-    sel.innerHTML = `<option value="">Pick a Saturday…</option>`;
-    saturdaysThroughMay2026().forEach(date => {
-      const v = ymd(date);
-      const opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = date.toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+  // ====== Settings & GameDays for Game dropdown ======
+  async function loadSeasonAndGameDays(){
+    try{
+      const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'getsettings' }) });
+      const j=await res.json();
+      const s=j.settings||{}; const g=j.gamedays||[];
+      populateGameDates(s, g);
+    }catch(e){
+      // Fallback to old behavior (next Sat through May 2026)
+      fallbackGameDates();
+    }
+  }
+  function populateGameDates(settings, gamedays){
+    const sel=document.getElementById('gameday');
+    const note=document.getElementById('gamedayNote');
+    sel.innerHTML=`<option value="">Pick a Saturday…</option>`;
+    const startISO = settings.SeasonStart; const endISO = settings.SeasonEnd;
+    if(!startISO||!endISO){ note.textContent='(Season not set yet)'; fallbackGameDates(); return; }
+    note.textContent=`Season: ${startISO} → ${endISO}`;
+    const byDate=new Map(gamedays.map(x=>[x.Date, x]));
+    saturdaysBetween(startISO,endISO).forEach(date=>{
+      const meta=byDate.get(date);
+      if(meta && meta.IsBye==='Yes') return; // skip bye
+      const labelMeta = meta ? (meta.Start==='TOURNAMENT' ? 'TOURNAMENT' : (meta.Start? `${meta.Start} start` : '')) : '';
+      const human=new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+      const opt=document.createElement('option');
+      opt.value=date;
+      opt.textContent=labelMeta ? `${human} — ${labelMeta}` : human;
       sel.appendChild(opt);
     });
   }
+  function fallbackGameDates(){
+    const sel=document.getElementById('gameday');
+    const note=document.getElementById('gamedayNote');
+    note.textContent='(Using default Saturdays: next Saturday through May 2026)';
+    sel.innerHTML=`<option value="">Pick a Saturday…</option>`;
+    const end=new Date(2026,4,31);
+    let cur=nextSaturday(new Date());
+    while(cur<=end){
+      const v=ymd(cur);
+      const opt=document.createElement('option');
+      opt.value=v; opt.textContent=cur.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+      sel.appendChild(opt); cur.setDate(cur.getDate()+7);
+    }
+  }
 
-  // ====== Roster load ======
-  async function loadRoster() {
-    const playerSel = document.getElementById('player');
-    const fallback = document.getElementById('rosterFallback');
-    try {
-      const res = await fetch(API_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'roster' })
+  // ====== Roster load (division-aware) ======
+  async function loadRoster(){
+    document.getElementById('divBadge').textContent = `Division ${DIVISION}`;
+    const playerSel=document.getElementById('player');
+    const fallback=document.getElementById('rosterFallback');
+    try{
+      const res=await fetch(API_URL,{
+        method:'POST',
+        headers:{'Content-Type':'text/plain;charset=utf-8'},
+        body: JSON.stringify({ action:'roster', division: DIVISION })
       });
-      const json = await res.json();
-      let roster = (json && json.roster) ? json.roster : [];
-      playerSel.innerHTML = `<option value="">Select…</option>`;
-      if (!roster.length) {
-        fallback.style.display = 'block';
-      } else {
-        roster.forEach(name => {
-          const opt = document.createElement('option');
-          opt.value = name;
-          opt.textContent = name;
+      const json=await res.json();
+      const roster = Array.isArray(json?.roster) ? json.roster : [];
+      playerSel.innerHTML=`<option value="">Select…</option>`;
+      if(!roster.length){ fallback.style.display='block'; }
+      else{
+        roster.forEach(r=>{
+          const opt=document.createElement('option');
+          opt.value=r.player; opt.textContent=r.player;
           playerSel.appendChild(opt);
         });
-        fallback.style.display = 'none';
+        fallback.style.display='none';
       }
-    } catch (e) {
-      // Fallback to manual entry
-      playerSel.innerHTML = `<option value="">(Roster unavailable)</option>`;
-      fallback.style.display = 'block';
+    }catch(e){
+      playerSel.innerHTML=`<option value="">(Roster unavailable)</option>`;
+      fallback.style.display='block';
     }
   }
 
   // ====== Submit ======
-  async function submitAll() {
-    const status = document.getElementById('statusMsg');
-    status.textContent = '';
+  async function submitAll(){
+    const status=document.getElementById('statusMsg'); status.textContent='';
+    const playerSel=document.getElementById('player'); const playerText=document.getElementById('playerText');
+    const player = playerSel.value || (playerText? playerText.value.trim(): '');
+    if(!player){ status.innerHTML='<span class="error">Please select or enter your name.</span>'; return; }
 
-    const playerSel = document.getElementById('player');
-    const playerText = document.getElementById('playerText');
-    let player = playerSel.value || (playerText ? playerText.value.trim() : '');
-    if (!player) {
-      status.innerHTML = '<span class="error">Please select or enter your name.</span>';
-      return;
-    }
-
-    // Collect next week practice selections
-    const rows = [];
-    const tbody = document.querySelector('#weekTable tbody');
-    [...tbody.rows].forEach((tr) => {
-      const dayLabel = tr.cells[0].textContent.trim();
-      const date = tr.cells[1].getAttribute('data-date');
-      const p810 = tr.querySelector('input[data-slot="p810"]').checked;
-      const p122 = tr.querySelector('input[data-slot="p122"]').checked;
-      const p610 = tr.querySelector('input[data-slot="p610"]').checked;
-      if (p810 || p122 || p610) {
-        rows.push({ day: dayLabel, date, p810, p122, p610 });
-      }
+    const rows=[]; const tbody=document.querySelector('#weekTable tbody');
+    [...tbody.rows].forEach(tr=>{
+      const dayLabel=tr.cells[0].textContent.trim();
+      const date=tr.cells[1].getAttribute('data-date');
+      const p68 = tr.querySelector('input[data-slot="p68"]').checked;
+      const p810= tr.querySelector('input[data-slot="p810"]').checked;
+      const p122= tr.querySelector('input[data-slot="p122"]').checked;
+      const p710= tr.querySelector('input[data-slot="p710"]').checked;
+      if(p68||p810||p122||p710){ rows.push({ day:dayLabel, date, p68, p810, p122, p710 }); }
     });
 
-    try {
-      // Submit weekly practices (if any)
-      if (rows.length) {
-        const res1 = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'submitWeek', player, week: rows })
+    try{
+      if(rows.length){
+        await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+          body: JSON.stringify({ action:'submitWeek', player, division: DIVISION, week: rows })
         });
-        await res1.json();
       }
-
-      // Submit game (if selected)
-      const gameDate = document.getElementById('gameday').value || '';
-      const gameAvail = document.getElementById('gameAvailable').checked ? 'Yes' : '';
-      if (gameDate || gameAvail) {
-        const res2 = await fetch(API_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({
-            player,
-            game_date: gameDate,
-            game_available: gameAvail
-          })
+      const gameDate=document.getElementById('gameday').value || '';
+      const gameAvail=document.getElementById('gameAvailable').checked ? 'Yes':'';
+      if(gameDate || gameAvail){
+        await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+          body: JSON.stringify({ action:'submitGame', player, division: DIVISION, game_date: gameDate, game_available: gameAvail })
         });
-        await res2.json();
       }
-
-      status.innerHTML = '<span class="success">Thanks! Your availability has been submitted.</span>';
-    } catch (e) {
-      status.innerHTML = '<span class="error">Network or server error. Please try again.</span>';
+      status.innerHTML='<span class="success">Thanks! Your availability has been submitted.</span>';
+    }catch(e){
+      status.innerHTML='<span class="error">Network or server error. Please try again.</span>';
     }
   }
 
   // Init
   buildWeekTable();
-  populateGameDates();
+  loadSeasonAndGameDays();
   loadRoster();
   document.getElementById('submitBtn').addEventListener('click', submitAll);
 </script>
