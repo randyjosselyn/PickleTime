@@ -33,6 +33,7 @@
     <a href="./index.html">← Player Form</a>
   </div>
   <h1>Admin Dashboard <span id="divBadge" class="badge"></span></h1>
+
   <div class="inline small" style="margin:6px 0 16px 0;">
     Division:
     <select id="divSelect">
@@ -81,7 +82,7 @@
     <table id="gamedaysTable" style="margin-top:10px;">
       <thead>
         <tr>
-             <th>Date</th><th>Bye?</th><th>Start</th><th>Coach Note</th><th>Action</th>
+          <th>Date</th><th>Bye?</th><th>Start</th><th>Coach Note</th><th>Action</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -112,28 +113,28 @@
   const urlParams = new URLSearchParams(location.search);
   let DIVISION = (urlParams.get('div') || 'D4').toUpperCase();
 
-  // ====== Date helpers ======
+  // ====== Helpers ======
   function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
-  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7||7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
+  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function listSatsBetween(startISO,endISO){
-    const out=[]; if(!startISO||!endISO) return out;
-    let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00'); let cur=new Date(s);
-    // advance cur to Saturday
+    const out=[]; if(!startISO || !endISO) return out;
+    let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00');
+    let cur=new Date(s);
     const off=(6-cur.getDay()+7)%7; cur.setDate(cur.getDate()+off); cur.setHours(0,0,0,0);
     while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); }
     return out;
   }
+  const escAttr = (str) => String(str||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
 
   // ====== Fetch ======
   async function api(body){
-    const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body) });
+    const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify(body) });
     return res.json();
   }
 
   // ====== Aggregations (division-aware) ======
   function latestPracticeByPlayerDate(rows){
-    // Only Type='practice'
-    const map=new Map(); // key: player|division|date -> latest
+    const map=new Map(); // key: player\ndivision\ndate -> latest
     rows.forEach(r=>{
       if((r['Type']||'').toString().toLowerCase()!=='practice') return;
       const player=(r['Player']||'').toString().trim();
@@ -141,12 +142,10 @@
       const date=(r['Practice Date']||'').toString().trim();
       if(!player || !date) return;
       const ts=new Date(r['Timestamp']).getTime()||0;
-      const key = `${player}|${division}|${date}`;
+      const key = `${player}\n${division}\n${date}`;
       const curr=map.get(key);
       if(!curr || ts>curr.ts){
-        map.set(key,{
-          ts,
-          division,
+        map.set(key,{ ts, division,
           p68: !!r['Practice: 6-8 AM'],
           p810:!!r['Practice: 8-10 AM'],
           p122:!!r['Practice: 12-2 PM'],
@@ -165,10 +164,9 @@
       week.push({ label:days[i], iso: ymd(d), names68:new Set(), names810:new Set(), names122:new Set(), names710:new Set() });
     }
     map.forEach((rec, key)=>{
-      const [player, div, date]=key.split('|');
+      const [player, div, date]=key.split('\n');
       if(div.toUpperCase()!==division.toUpperCase()) return;
-      const w=week.find(x=>x.iso===date);
-      if(!w) return;
+      const w=week.find(x=>x.iso===date); if(!w) return;
       if(rec.p68) w.names68.add(player);
       if(rec.p810) w.names810.add(player);
       if(rec.p122) w.names122.add(player);
@@ -180,9 +178,7 @@
   function renderWeek(week, start){
     const tb=document.querySelector('#weekTable tbody'); tb.innerHTML='';
     const end=new Date(start); end.setDate(start.getDate()+5);
-    document.getElementById('weekRangeNote').textContent =
-      `${start.toLocaleDateString(undefined,{month:'short',day:'numeric'})} – ${end.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
-
+    document.getElementById('weekRangeNote').textContent = `${start.toLocaleDateString(undefined,{month:'short',day:'numeric'})} – ${end.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
     week.forEach(day=>{
       const players=new Set([...day.names68, ...day.names810, ...day.names122, ...day.names710]);
       const tr=document.createElement('tr');
@@ -200,7 +196,6 @@
   }
 
   function renderPicks(week){
-    // Sum unique players per slot across the week
     const counts = [
       { key:'6–8 AM', count: new Set() },
       { key:'8–10 AM', count: new Set() },
@@ -213,48 +208,43 @@
       d.names122.forEach(n=>counts[2].count.add(n));
       d.names710.forEach(n=>counts[3].count.add(n));
     });
-    const arr = counts.map((c,i)=>({ key:c.key, size:c.count.size })).sort((a,b)=>b.size - a.size);
+    const arr = counts.map(c=>({ key:c.key, size:c.count.size })).sort((a,b)=>b.size - a.size);
     const picks = arr.slice(0,2).filter(x=>x.size>0);
     const el=document.getElementById('picks');
-    el.innerHTML = picks.length
-      ? picks.map(p=>`• ${p.key} (${p.size} available)`).join('<br/>')
-      : 'No availability yet.';
+    el.innerHTML = picks.length ? picks.map(p=>`• ${p.key} (${p.size} available)`).join('<br/>') : 'No availability yet.';
   }
 
   // ====== Season Manager ======
   function renderSeason(settings, gamedays){
     document.getElementById('seasonStart').value = settings.SeasonStart || '';
-    document.getElementById('seasonEnd').value   = settings.SeasonEnd   || '';
+    document.getElementById('seasonEnd').value = settings.SeasonEnd || '';
     const tb=document.querySelector('#gamedaysTable tbody'); tb.innerHTML='';
-
     const list = listSatsBetween(settings.SeasonStart, settings.SeasonEnd);
     const byDate = new Map(gamedays.map(x=>[x.Date,x]));
     list.forEach(date=>{
-      const meta = byDate.get(date) || { IsBye:'No', Start:'' };
+      const meta = byDate.get(date) || { IsBye:'No', Start:'', CoachNote:'' };
       const tr=document.createElement('tr');
-      
-tr.innerHTML = `
-  <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
-  <td>
-    <select data-date="${date}" data-field="isbye">
-      <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
-      <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
-    </select>
-  </td>
-  <td>
-    <select data-date="${date}" data-field="start" ${meta.IsBye==='Yes'?'disabled':''}>
-      <option value="" ${!meta.Start?'selected':''}></option>
-      <option value="06:45" ${meta.Start==='06:45'?'selected':''}>06:45</option>
-      <option value="08:20" ${meta.Start==='08:20'?'selected':''}>08:20</option>
-      <option value="TOURNAMENT" ${meta.Start==='TOURNAMENT'?'selected':''}>TOURNAMENT</option>
-    </select>
-  </td>
-  <td>
-    <input type="text" data-date="${date}" data-field="coach" placeholder="Coach note" value="${meta.CoachNote? meta.CoachNote.replace(/"/g,'&quot;'):''}">
-  </td>
-  <td><button class="btn" data-save="${date}">Save</button></td>
-`;
-
+      tr.innerHTML = `
+        <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
+        <td>
+          <select data-date="${date}" data-field="isbye">
+            <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
+            <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
+          </select>
+        </td>
+        <td>
+          <select data-date="${date}" data-field="start" ${meta.IsBye==='Yes'?'disabled':''}>
+            <option value="" ${!meta.Start?'selected':''}></option>
+            <option value="06:45" ${meta.Start==='06:45'?'selected':''}>06:45</option>
+            <option value="08:20" ${meta.Start==='08:20'?'selected':''}>08:20</option>
+            <option value="TOURNAMENT" ${meta.Start==='TOURNAMENT'?'selected':''}>TOURNAMENT</option>
+          </select>
+        </td>
+        <td>
+          <input type="text" data-date="${date}" data-field="coach" placeholder="Coach note" value="${escAttr(meta.CoachNote)}">
+        </td>
+        <td><button class="btn" data-save="${date}">Save</button></td>
+      `;
       tb.appendChild(tr);
     });
 
@@ -263,34 +253,34 @@ tr.innerHTML = `
       sel.addEventListener('change', ev=>{
         const date=sel.getAttribute('data-date');
         const startSel=tb.querySelector(`select[data-field="start"][data-date="${date}"]`);
-        if(sel.value==='Yes'){ startSel.disabled=true; } else { startSel.disabled=false; }
+        startSel.disabled = sel.value==='Yes';
       });
     });
 
     // Save buttons
-tb.querySelectorAll('button[data-save]').forEach(btn=>{
-  btn.addEventListener('click', async ()=>{
-    const date=btn.getAttribute('data-save');
-    const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
-    const startSel=tb.querySelector(`select[data-field="start"][data-date="${date}"]`);
-    const noteInp=tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
-    await api({
-      action:'setGameDay',
-      division: DIVISION,
-      date,
-      isBye: isByeSel.value==='Yes',
-      start: startSel.disabled ? '' : startSel.value,
-      coachNote: noteInp.value || ''
+    tb.querySelectorAll('button[data-save]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const date=btn.getAttribute('data-save');
+        const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
+        const startSel=tb.querySelector(`select[data-field="start"][data-date="${date}"]`);
+        const noteInp=tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
+        await api({
+          action:'setgameday',
+          division: DIVISION,
+          date,
+          isBye: isByeSel.value==='Yes',
+          start: startSel.disabled ? '' : startSel.value,
+          coachNote: noteInp.value || ''
+        });
+        await refresh();
+      });
     });
-    await refresh();
-  });
-});
   }
 
   async function saveSeason(){
     const s=document.getElementById('seasonStart').value;
     const e=document.getElementById('seasonEnd').value;
-    await api({ action:'saveSettings', settings:{ SeasonStart:s, SeasonEnd:e } });
+    await api({ action:'savesettings', settings:{ SeasonStart:s, SeasonEnd:e } });
     await refresh();
   }
 
@@ -319,27 +309,19 @@ tb.querySelectorAll('button[data-save]').forEach(btn=>{
     tb.querySelectorAll('button[data-remove]').forEach(btn=>{
       btn.addEventListener('click', async ()=>{
         const player=btn.getAttribute('data-remove');
-        await api({ action:'removePlayer', player });
+        await api({ action:'removeplayer', player });
         await refresh();
       });
     });
+
     tb.querySelectorAll('button[data-move-btn]').forEach(btn=>{
       btn.addEventListener('click', async ()=>{
         const player=btn.getAttribute('data-move-btn');
         const sel=tb.querySelector(`select[data-move="${player}"]`);
-        await api({ action:'updatePlayerDivision', player, division: sel.value });
+        await api({ action:'updateplayerdivision', player, division: sel.value });
         await refresh();
       });
     });
-  }
-
-  async function addPlayer(){
-    const name=document.getElementById('newPlayer').value.trim();
-    const div=document.getElementById('newDivision').value;
-    if(!name) return;
-    await api({ action:'addPlayer', player:name, division:div });
-    document.getElementById('newPlayer').value='';
-    await refresh();
   }
 
   // ====== Refresh all ======
@@ -347,6 +329,7 @@ tb.querySelectorAll('button[data-save]').forEach(btn=>{
     document.getElementById('divBadge').textContent=`Division ${DIVISION}`;
     document.getElementById('divSelect').value=DIVISION;
     document.getElementById('updatedAt').textContent='Loading…';
+
     const json = await api({ action:'read', division: DIVISION });
     const rows = json.rows || [];
     const start = startOfNextWeek();
@@ -354,7 +337,7 @@ tb.querySelectorAll('button[data-save]').forEach(btn=>{
     const week = aggregateWeek(latest, start, DIVISION);
     renderWeek(week, start);
     renderPicks(week);
-    renderSeason(json.settings||{}, json.gamedays||{});
+    renderSeason(json.settings||{}, json.gamedays||[]);
     const allRoster = json.roster || []; // already division-filtered
     renderRoster(allRoster);
     document.getElementById('updatedAt').textContent = `Updated: ${new Date(json.updatedAt||Date.now()).toLocaleString()}`;
@@ -367,7 +350,14 @@ tb.querySelectorAll('button[data-save]').forEach(btn=>{
     refresh();
   });
   document.getElementById('saveSeason').addEventListener('click', saveSeason);
-  document.getElementById('addPlayerBtn').addEventListener('click', addPlayer);
+  document.getElementById('addPlayerBtn').addEventListener('click', async ()=>{
+    const name=document.getElementById('newPlayer').value.trim();
+    const div=document.getElementById('newDivision').value;
+    if(!name) return;
+    await api({ action:'addplayer', player:name, division:div });
+    document.getElementById('newPlayer').value='';
+    await refresh();
+  });
 
   refresh();
 </script>
