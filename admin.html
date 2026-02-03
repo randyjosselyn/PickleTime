@@ -25,6 +25,7 @@
     .inline { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
     .badge { display:inline-block; background:#eef7f0; color:#2c6e49; padding:4px 10px; border-radius:999px; font-size:12px; margin-left:8px; }
     select, input[type="text"], input[type="date"], input[type="time"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
+    .muted { color:#777; font-size:12px; }
   </style>
 </head>
 <body>
@@ -94,19 +95,15 @@
     <h3>Add Ad‑hoc Game (any date)</h3>
     <div class="inline small">
       <label>Date: <input type="date" id="adhocDate"></label>
-      <label>Start:
-        <select id="adhocStart">
-          <option value=""></option>
-          <option value="06:45">06:45</option>
-          <option value="08:20">08:20</option>
-          <option value="TOURNAMENT">TOURNAMENT</option>
-        </select>
+      <label>Time:
+        <input type="time" id="adhocTime" step="300"> <span class="muted">(optional)</span>
       </label>
+      <label>or Free‑text time: <input type="text" id="adhocTimeText" placeholder="e.g., 9:15am, Night, TBD"></label>
       <label>Note: <input type="text" id="adhocNote" placeholder="Optional coach note"></label>
       <label>BYE? <input type="checkbox" id="adhocBye"></label>
       <button class="btn" id="adhocBtn">Add/Update</button>
     </div>
-    <div class="small">Tip: Ad‑hoc games are division‑specific and can be any weekday/time.</div>
+    <div class="small">Rules: If BYE is checked, time is ignored. If both time fields are empty, start will be saved as <b>TBD</b>.</div>
   </div>
 
   <div class="card">
@@ -301,7 +298,6 @@
     const s=document.getElementById('seasonStart').value;
     const e=document.getElementById('seasonEnd').value;
     await api({ action:'savesettings', settings:{ SeasonStart:s, SeasonEnd:e } });
-    // Auto-seed Saturdays for the current division
     await api({ action:'seedgamedays', division: DIVISION });
     await refresh();
   }
@@ -346,13 +342,27 @@
     });
   }
 
-  // ====== Ad-hoc game handler ======
+  // ====== Ad-hoc game handler (any time or TBD) ======
   async function addAdhoc(){
     const date = (document.getElementById('adhocDate').value||'').trim();
-    const start = document.getElementById('adhocStart').value;
+    const timeVal = (document.getElementById('adhocTime').value||'').trim(); // "HH:MM" 24h
+    const timeText = (document.getElementById('adhocTimeText').value||'').trim(); // free text like "9:15am" or "Night" or "TBD"
     const coachNote = document.getElementById('adhocNote').value||'';
     const isBye = document.getElementById('adhocBye').checked;
     if (!date) return;
+
+    // Decide "start" string to store
+    let start = '';
+    if (isBye) {
+      start = ''; // ignored when BYE
+    } else if (timeText) {
+      start = timeText; // priority to free text
+    } else if (timeVal) {
+      start = timeVal;  // e.g., 09:15
+    } else {
+      start = 'TBD';
+    }
+
     await api({ action:'adhocgame', division: DIVISION, date, start, coachNote, isBye });
     await refresh();
   }
