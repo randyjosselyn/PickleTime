@@ -25,7 +25,6 @@
     .note { font-size: 12px; color:#666; }
     .success { color:#0a7d33; font-weight:bold; }
     .error { color:#b00020; font-weight:bold; }
-    .coachnote { background:#fffbe6; border:1px solid #f0e6a2; padding:10px; border-radius:8px; margin-top:8px; white-space:pre-wrap; }
   </style>
 </head>
 <body>
@@ -62,7 +61,6 @@
     <label for="gameday">Saturday Game Date</label>
     <select id="gameday"><option value="">Pick a Saturday…</option></select>
     <div class="note" id="gamedayNote"></div>
-    <div id="coachNoteBox" class="coachnote" style="display:none;"></div>
     <div class="checks" style="margin-top:12px;">
       <label><input type="checkbox" id="gameAvailable" /> I am available for this game</label>
     </div>
@@ -76,15 +74,15 @@
   // ====== CONFIG ======
   const API_URL = "https://round-fog-5a5e.randyjosselyn.workers.dev/";
   const params = new URLSearchParams(location.search);
-  const DIVISION = (params.get('div') || 'D4').toUpperCase();
+  const DIVISION = (params.get('div') || 'D4').toUpperCase(); // passed per-player via URL
 
   // ====== Date helpers ======
-  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7||7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
+  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
   function formatHuman(d){ return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }
-  function nextSaturday(from){ const d=new Date(from); const day=d.getDay(); const off=(6-day+7)%7||7; d.setDate(d.getDate()+off); d.setHours(0,0,0,0); return d; }
+  function nextSaturday(from){ const d=new Date(from); const off=(6-d.getDay()+7)%7; d.setDate(d.getDate()+off); d.setHours(0,0,0,0); return d; }
   function saturdaysBetween(startISO,endISO){
-    const out=[]; if(!startISO||!endISO) return out;
+    const out=[]; if(!startISO || !endISO) return out;
     let s=new Date(startISO+'T00:00:00'), e=new Date(endISO+'T00:00:00');
     let cur=nextSaturday(s);
     while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); }
@@ -112,51 +110,30 @@
     }
   }
 
-  // ====== Season + Coach Notes ======
-  let coachNoteMap = new Map(); // key: YYYY-MM-DD -> note (for this division)
-  async function loadSeasonAndGameDays(){
-    try{
-      
-const res = await fetch(API_URL, {
-  method: 'POST',
-  headers: {'Content-Type': 'text/plain;charset=utf-8'},
-  body: JSON.stringify({ action:'getsettings', division: DIVISION })
-});
-
-      
-      const j=await res.json();
-      const s=j.settings||{}; const g=j.gamedays||[]; const notes=j.coachNotes||[];
-      coachNoteMap = new Map(notes.filter(n => (n.Division||'').toUpperCase()===DIVISION).map(n => [n.Date, n.Note]));
-      populateGameDates(s, g);
-    }catch(e){
-      fallbackGameDates();
-    }
-  }
+  // ====== Season + GameDays ======
   function populateGameDates(settings, gamedays){
     const sel=document.getElementById('gameday');
     const note=document.getElementById('gamedayNote');
     sel.innerHTML=`<option value="">Pick a Saturday…</option>`;
     const startISO=settings.SeasonStart, endISO=settings.SeasonEnd;
-    if(!startISO||!endISO){ note.textContent='(Season not set yet)'; fallbackGameDates(); return; }
+    if(!startISO || !endISO){ note.textContent='(Season not set yet)'; fallbackGameDates(); return; }
     note.textContent=`Season: ${startISO} → ${endISO}`;
+
     const byDate=new Map(gamedays.map(x=>[x.Date,x]));
     saturdaysBetween(startISO,endISO).forEach(date=>{
       const meta=byDate.get(date);
-      if(meta && meta.IsBye==='Yes') return;
-      const labelMeta = meta
-  ? (meta.Start==='TOURNAMENT'
-      ? 'TOURNAMENT'
-      : (meta.Start ? `${meta.Start} start` : ''))
-  : '';
-const notePart = meta && meta.CoachNote ? ` — ${meta.CoachNote}` : '';
-const human=new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
-opt.textContent = (labelMeta ? `${human} — ${labelMeta}` : human) + notePart;
+      if(meta && meta.IsBye==='Yes') return; // skip BYE
       const human=new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+      const labelMeta = meta ? (meta.Start==='TOURNAMENT' ? 'TOURNAMENT' : (meta.Start ? `${meta.Start} start` : '')) : '';
+      const notePart = meta && meta.CoachNote ? ` — ${meta.CoachNote}` : '';
+
       const opt=document.createElement('option');
-      opt.value=date; opt.textContent=labelMeta ? `${human} — ${labelMeta}` : human;
+      opt.value=date;
+      opt.textContent = labelMeta ? `${human} — ${labelMeta}${notePart}` : `${human}${notePart}`;
       sel.appendChild(opt);
     });
   }
+
   function fallbackGameDates(){
     const sel=document.getElementById('gameday');
     const note=document.getElementById('gamedayNote');
@@ -171,21 +148,26 @@ opt.textContent = (labelMeta ? `${human} — ${labelMeta}` : human) + notePart;
       sel.appendChild(opt); cur.setDate(cur.getDate()+7);
     }
   }
-  function showCoachNoteForSelected(){
-    const val=document.getElementById('gameday').value;
-    const box=document.getElementById('coachNoteBox');
-    const note = coachNoteMap.get(val) || '';
-    if(note){ box.style.display='block'; box.textContent=note; }
-    else { box.style.display='none'; box.textContent=''; }
+
+  async function loadSeasonAndGameDays(){
+    try{
+      const res=await fetch(API_URL,{
+        method:'POST',headers:{'Content-Type':'application/json;charset=utf-8'},
+        body: JSON.stringify({ action:'getsettings', division: DIVISION })
+      });
+      const j=await res.json();
+      const s=j.settings||{}; const g=j.gamedays||[];
+      populateGameDates(s,g);
+    }catch(e){ fallbackGameDates(); }
   }
 
-  // ====== Roster (division-aware) ======
+  // ====== Roster (division-aware via URL param) ======
   async function loadRoster(){
     document.getElementById('divBadge').textContent=`Division ${DIVISION}`;
     const playerSel=document.getElementById('player');
     const fallback=document.getElementById('rosterFallback');
     try{
-      const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'roster', division: DIVISION }) });
+      const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'roster', division: DIVISION }) });
       const json=await res.json();
       const roster=Array.isArray(json?.roster)?json.roster:[];
       playerSel.innerHTML=`<option value="">Select…</option>`;
@@ -220,12 +202,12 @@ opt.textContent = (labelMeta ? `${human} — ${labelMeta}` : human) + notePart;
 
     try{
       if(rows.length){
-        await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'submitWeek', player, division: DIVISION, week: rows }) });
+        await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'submitweek', player, division: DIVISION, week: rows }) });
       }
       const gameDate=document.getElementById('gameday').value||'';
       const gameAvail=document.getElementById('gameAvailable').checked?'Yes':'';
-      if(gameDate || gameAvail){
-        await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'submitGame', player, division: DIVISION, game_date:gameDate, game_available:gameAvail }) });
+      if(gameDate && gameAvail){
+        await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'submitgame', player, division: DIVISION, game_date:gameDate, game_available:gameAvail }) });
       }
       status.innerHTML='<span class="success">Thanks! Your availability has been submitted.</span>';
     }catch(e){
@@ -237,7 +219,6 @@ opt.textContent = (labelMeta ? `${human} — ${labelMeta}` : human) + notePart;
   buildWeekTable();
   loadSeasonAndGameDays();
   loadRoster();
-  document.getElementById('gameday').addEventListener('change', showCoachNoteForSelected);
   document.getElementById('submitBtn').addEventListener('click', submitAll);
 </script>
 </body>
