@@ -7,11 +7,12 @@
   <style>
     :root { --green:#2c6e49; --green2:#3d8b63; --bg:#f7f7f7; }
     body { font-family: Arial, sans-serif; margin: 24px; background: var(--bg); }
-    .container { max-width: 1100px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+    .container { max-width: 1200px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
     h1 { margin: 0 0 8px; color:var(--green); font-size: 24px; }
     .toplinks { display:flex; gap:10px; margin-bottom:16px; }
     .toplinks a { color: var(--green); text-decoration:none; font-size:14px; }
-    .card { background:#f4f4f4; border-radius:10px; padding:16px; margin:16px 0; }
+    .row { display:grid; grid-template-columns: repeat(2,1fr); gap:16px; margin: 16px 0; }
+    .card { background:#f4f4f4; border-radius:10px; padding:16px; }
     .card h3 { margin:0 0 8px; font-size:16px; }
     table { width:100%; border-collapse: collapse; }
     th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; }
@@ -20,6 +21,10 @@
     .counts { font-weight:bold; }
     .btn { display:inline-block; padding:10px 12px; background:var(--green); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
     .btn:hover { background:var(--green2); }
+    .pill { display:inline-block; background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; margin:4px 6px 0 0; font-size:12px; }
+    .inline { display:flex; gap:10px; align-items:center; }
+    .badge { display:inline-block; background:#eef7f0; color:#2c6e49; padding:4px 10px; border-radius:999px; font-size:12px; margin-left:8px; }
+    select, input[type="text"], input[type="date"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
   </style>
 </head>
 <body>
@@ -27,21 +32,56 @@
   <div class="toplinks">
     <a href="./index.html">← Player Form</a>
   </div>
-  <h1>Admin Dashboard</h1>
-  <div class="small" id="updatedAt">Loading…</div>
+  <h1>Admin Dashboard <span id="divBadge" class="badge"></span></h1>
+  <div class="inline small" style="margin:6px 0 16px 0;">
+    Division:
+    <select id="divSelect">
+      <option>D1</option><option>D2</option><option>D3</option><option selected>D4</option>
+    </select>
+    <button class="btn" id="applyDiv">Apply</button>
+    <span id="updatedAt" class="small">Loading…</span>
+  </div>
+
+  <div class="row">
+    <div class="card">
+      <h3>Next Week — Practice Availability (Sun–Fri)</h3>
+      <div class="small" id="weekRangeNote">—</div>
+      <table id="weekTable">
+        <thead>
+          <tr>
+            <th>Day</th>
+            <th>Date</th>
+            <th>6–8 AM</th>
+            <th>8–10 AM</th>
+            <th>12–2 PM</th>
+            <th>7–10 PM</th>
+            <th>Players</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>Practice Picks (Top 2 windows, next week)</h3>
+      <div id="picks"></div>
+      <div class="small">Based on latest submissions per player in this division.</div>
+      <button class="btn" id="refreshBtn">Refresh</button>
+    </div>
+  </div>
 
   <div class="card">
-    <h3>Next Week — Practice Availability (Sun–Fri)</h3>
-    <div class="small" id="weekRangeNote">—</div>
-    <table id="weekTable">
+    <h3>Season Manager</h3>
+    <div class="inline small">
+      <label>Season Start: <input type="date" id="seasonStart"></label>
+      <label>Season End: <input type="date" id="seasonEnd"></label>
+      <button class="btn" id="saveSeason">Save Season</button>
+    </div>
+    <div class="small" style="margin-top:8px;">Set Saturdays (Bye or Start: 06:45 / 08:20 / TOURNAMENT)</div>
+    <table id="gamedaysTable" style="margin-top:10px;">
       <thead>
         <tr>
-          <th>Day</th>
-          <th>Date</th>
-          <th>8–10 AM (count)</th>
-          <th>12–2 PM (count)</th>
-          <th>6–10 PM (count)</th>
-          <th>Players</th>
+          <th>Date</th><th>Bye?</th><th>Start</th><th>Action</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -49,208 +89,274 @@
   </div>
 
   <div class="card">
-    <h3>Saturday Game Availability</h3>
-    <div class="small">From next Saturday through end of May 2026</div>
-    <table id="gamesTable">
+    <h3>Roster Management</h3>
+    <div class="inline small">
+      <label>Player: <input type="text" id="newPlayer" placeholder="Full name"></label>
+      <label>Division:
+        <select id="newDivision"><option>D1</option><option>D2</option><option>D3</option><option selected>D4</option></select>
+      </label>
+      <button class="btn" id="addPlayerBtn">Add Player</button>
+    </div>
+    <table id="rosterTable" style="margin-top:10px;">
       <thead>
-        <tr>
-          <th>Date</th>
-          <th># Available</th>
-          <th>Players</th>
-        </tr>
+        <tr><th>Player</th><th>Division</th><th>Move To</th><th>Remove</th></tr>
       </thead>
       <tbody></tbody>
     </table>
   </div>
-
-  <button class="btn" id="refreshBtn">Refresh</button>
 </div>
 
 <script>
   // ====== CONFIG ======
-  const API_URL = "https://round-fog-5a5e.randyjosselyn.workers.dev/"; // e.g., your Cloudflare Worker URL
+  const API_URL = "https://round-fog-5a5e.randyjosselyn.workers.dev/";
+  const urlParams = new URLSearchParams(location.search);
+  let DIVISION = (urlParams.get('div') || 'D4').toUpperCase();
 
   // ====== Date helpers ======
-  function ymd(d) {
-    const y = d.getFullYear();
-    const m = String(d.getMonth()+1).padStart(2,'0');
-    const dd = String(d.getDate()).padStart(2,'0');
-    return `${y}-${m}-${dd}`;
-  }
-  function startOfNextWeek() {
-    const d = new Date();
-    const day = d.getDay(); // 0=Sun
-    const add = (7 - day) % 7 || 7;
-    d.setDate(d.getDate() + add);
-    d.setHours(0,0,0,0);
-    return d;
-  }
-  function nextSaturday(fromDate) {
-    const d = new Date(fromDate);
-    const day = d.getDay();
-    const offset = (6 - day + 7) % 7 || 7;
-    d.setDate(d.getDate() + offset);
-    d.setHours(0,0,0,0);
-    return d;
-  }
-  function saturdaysThroughMay2026() {
-    const end = new Date(2026, 4, 31);
-    const out = [];
-    let cur = nextSaturday(new Date());
-    while (cur <= end) {
-      out.push(new Date(cur));
-      cur.setDate(cur.getDate() + 7);
-    }
+  function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
+  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7||7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
+  function listSatsBetween(startISO,endISO){
+    const out=[]; if(!startISO||!endISO) return out;
+    let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00'); let cur=new Date(s);
+    // advance cur to Saturday
+    const off=(6-cur.getDay()+7)%7; cur.setDate(cur.getDate()+off); cur.setHours(0,0,0,0);
+    while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); }
     return out;
   }
 
   // ====== Fetch ======
-  async function fetchAll() {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action: 'read' })
-    });
+  async function api(body){
+    const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body) });
     return res.json();
   }
 
-  // ====== Aggregations ======
-  function latestPracticeByPlayerDate(rows) {
-    // Map key: player|date (Practice Date), only Type='practice'
-    const map = new Map();
-    rows.forEach(r => {
-      const type = (r['Type'] || '').toString().toLowerCase();
-      if (type !== 'practice') return;
-      const player = (r['Player'] || '').toString().trim();
-      const date = (r['Practice Date'] || '').toString().trim();
-      if (!player || !date) return;
-      const ts = new Date(r['Timestamp']).getTime() || 0;
-      const key = `${player}|${date}`;
-      const curr = map.get(key);
-      if (!curr || ts > curr.ts) {
-        map.set(key, {
+  // ====== Aggregations (division-aware) ======
+  function latestPracticeByPlayerDate(rows){
+    // Only Type='practice'
+    const map=new Map(); // key: player|division|date -> latest
+    rows.forEach(r=>{
+      if((r['Type']||'').toString().toLowerCase()!=='practice') return;
+      const player=(r['Player']||'').toString().trim();
+      const division=(r['Division']||'').toString().trim().toUpperCase();
+      const date=(r['Practice Date']||'').toString().trim();
+      if(!player || !date) return;
+      const ts=new Date(r['Timestamp']).getTime()||0;
+      const key = `${player}|${division}|${date}`;
+      const curr=map.get(key);
+      if(!curr || ts>curr.ts){
+        map.set(key,{
           ts,
-          p810: r['Practice: 8-10 AM'] ? true : false,
-          p122: r['Practice: 12-2 PM'] ? true : false,
-          p610: r['Practice: 6-10 PM'] ? true : false,
-          day: (r['Day'] || '').toString().trim()
+          division,
+          p68: !!r['Practice: 6-8 AM'],
+          p810:!!r['Practice: 8-10 AM'],
+          p122:!!r['Practice: 12-2 PM'],
+          p710:!!r['Practice: 7-10 PM']
         });
       }
     });
     return map;
   }
 
-  function aggregateWeek(map, start) {
-    // Build Sun–Fri dates
-    const days = ['Sun','Mon','Tue','Wed','Thu','Fri'];
-    const week = [];
-    for (let i=0; i<6; i++) {
-      const d = new Date(start); d.setDate(start.getDate()+i);
-      week.push({ label: days[i], iso: ymd(d), names810: new Set(), names122: new Set(), names610: new Set() });
+  function aggregateWeek(map, start, division){
+    const days=['Sun','Mon','Tue','Wed','Thu','Fri'];
+    const week=[];
+    for(let i=0;i<6;i++){
+      const d=new Date(start); d.setDate(start.getDate()+i);
+      week.push({ label:days[i], iso: ymd(d), names68:new Set(), names810:new Set(), names122:new Set(), names710:new Set() });
     }
-    // Fill sets
-    map.forEach((rec, key) => {
-      const [player, date] = key.split('|');
-      const w = week.find(x => x.iso === date);
-      if (!w) return; // Only show next week
-      if (rec.p810) w.names810.add(player);
-      if (rec.p122) w.names122.add(player);
-      if (rec.p610) w.names610.add(player);
+    map.forEach((rec, key)=>{
+      const [player, div, date]=key.split('|');
+      if(div.toUpperCase()!==division.toUpperCase()) return;
+      const w=week.find(x=>x.iso===date);
+      if(!w) return;
+      if(rec.p68) w.names68.add(player);
+      if(rec.p810) w.names810.add(player);
+      if(rec.p122) w.names122.add(player);
+      if(rec.p710) w.names710.add(player);
     });
     return week;
   }
 
-  function latestGameByPlayerDate(rows) {
-    const map = new Map();
-    rows.forEach(r => {
-      const type = (r['Type'] || '').toString().toLowerCase();
-      if (type !== 'game') return;
-      const player = (r['Player'] || '').toString().trim();
-      const date = (r['Game Date'] || '').toString().trim();
-      if (!player || !date) return;
-      const ts = new Date(r['Timestamp']).getTime() || 0;
-      const key = `${player}|${date}`;
-      const curr = map.get(key);
-      if (!curr || ts > curr.ts) {
-        map.set(key, { ts, yes: ((r['Available for Game?'] || '').toString().trim().toLowerCase() === 'yes') });
-      }
-    });
-    // By date
-    const byDate = new Map();
-    map.forEach((rec, key) => {
-      const [player, date] = key.split('|');
-      if (rec.yes) {
-        if (!byDate.has(date)) byDate.set(date, new Set());
-        byDate.get(date).add(player);
-      }
-    });
-    return byDate;
-  }
-
-  // ====== Render ======
-  function renderWeek(week, start) {
-    const tb = document.querySelector('#weekTable tbody');
-    tb.innerHTML = '';
-    const end = new Date(start); end.setDate(start.getDate()+5);
+  function renderWeek(week, start){
+    const tb=document.querySelector('#weekTable tbody'); tb.innerHTML='';
+    const end=new Date(start); end.setDate(start.getDate()+5);
     document.getElementById('weekRangeNote').textContent =
       `${start.toLocaleDateString(undefined,{month:'short',day:'numeric'})} – ${end.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
 
-    week.forEach(day => {
-      const players = new Set([...day.names810, ...day.names122, ...day.names610]);
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
+    week.forEach(day=>{
+      const players=new Set([...day.names68, ...day.names810, ...day.names122, ...day.names710]);
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
         <td>${day.label}</td>
-        <td>${new Date(day.iso + 'T00:00:00').toLocaleDateString(undefined, { month:'short', day:'numeric' })}</td>
+        <td>${new Date(day.iso+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'})}</td>
+        <td class="counts">${day.names68.size}</td>
         <td class="counts">${day.names810.size}</td>
         <td class="counts">${day.names122.size}</td>
-        <td class="counts">${day.names610.size}</td>
+        <td class="counts">${day.names710.size}</td>
         <td>${[...players].sort().join(', ')}</td>
       `;
       tb.appendChild(tr);
     });
   }
 
-  function renderGames(byDate) {
-    const tb = document.querySelector('#gamesTable tbody');
-    tb.innerHTML = '';
-    const allSats = saturdaysThroughMay2026().map(d => ymd(d));
-    allSats.forEach(date => {
-      const players = byDate.get(date) ? [...byDate.get(date)].sort() : [];
-      const tr = document.createElement('tr');
-      const human = new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday:'short', month:'short', day:'numeric', year:'numeric' });
+  function renderPicks(week){
+    // Sum unique players per slot across the week
+    const counts = [
+      { key:'6–8 AM', count: new Set() },
+      { key:'8–10 AM', count: new Set() },
+      { key:'12–2 PM', count: new Set() },
+      { key:'7–10 PM', count: new Set() }
+    ];
+    week.forEach(d=>{
+      d.names68.forEach(n=>counts[0].count.add(n));
+      d.names810.forEach(n=>counts[1].count.add(n));
+      d.names122.forEach(n=>counts[2].count.add(n));
+      d.names710.forEach(n=>counts[3].count.add(n));
+    });
+    const arr = counts.map((c,i)=>({ key:c.key, size:c.count.size })).sort((a,b)=>b.size - a.size);
+    const picks = arr.slice(0,2).filter(x=>x.size>0);
+    const el=document.getElementById('picks');
+    el.innerHTML = picks.length
+      ? picks.map(p=>`• ${p.key} (${p.size} available)`).join('<br/>')
+      : 'No availability yet.';
+  }
+
+  // ====== Season Manager ======
+  function renderSeason(settings, gamedays){
+    document.getElementById('seasonStart').value = settings.SeasonStart || '';
+    document.getElementById('seasonEnd').value   = settings.SeasonEnd   || '';
+    const tb=document.querySelector('#gamedaysTable tbody'); tb.innerHTML='';
+
+    const list = listSatsBetween(settings.SeasonStart, settings.SeasonEnd);
+    const byDate = new Map(gamedays.map(x=>[x.Date,x]));
+    list.forEach(date=>{
+      const meta = byDate.get(date) || { IsBye:'No', Start:'' };
+      const tr=document.createElement('tr');
       tr.innerHTML = `
-        <td>${human}</td>
-        <td class="counts">${players.length}</td>
-        <td>${players.join(', ')}</td>
+        <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
+        <td>
+          <select data-date="${date}" data-field="isbye">
+            <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
+            <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
+          </select>
+        </td>
+        <td>
+          <select data-date="${date}" data-field="start" ${meta.IsBye==='Yes'?'disabled':''}>
+            <option value="" ${!meta.Start?'selected':''}></option>
+            <option value="06:45" ${meta.Start==='06:45'?'selected':''}>06:45</option>
+            <option value="08:20" ${meta.Start==='08:20'?'selected':''}>08:20</option>
+            <option value="TOURNAMENT" ${meta.Start==='TOURNAMENT'?'selected':''}>TOURNAMENT</option>
+          </select>
+        </td>
+        <td><button class="btn" data-save="${date}">Save</button></td>
       `;
       tb.appendChild(tr);
     });
+
+    // Enable/disable Start when Bye toggled
+    tb.querySelectorAll('select[data-field="isbye"]').forEach(sel=>{
+      sel.addEventListener('change', ev=>{
+        const date=sel.getAttribute('data-date');
+        const startSel=tb.querySelector(`select[data-field="start"][data-date="${date}"]`);
+        if(sel.value==='Yes'){ startSel.disabled=true; } else { startSel.disabled=false; }
+      });
+    });
+
+    // Save buttons
+    tb.querySelectorAll('button[data-save]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const date=btn.getAttribute('data-save');
+        const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
+        const startSel=tb.querySelector(`select[data-field="start"][data-date="${date}"]`);
+        const payload = { action:'setGameDay', date, isBye: isByeSel.value==='Yes', start: startSel.disabled?'':startSel.value };
+        await api(payload);
+        await refresh();
+      });
+    });
   }
 
-  async function refresh() {
-    document.getElementById('updatedAt').textContent = 'Loading…';
-    try {
-      const json = await fetchAll();
-      const rows = (json && json.rows) ? json.rows : [];
-
-      // Practice aggregation for next week
-      const start = startOfNextWeek();
-      const latestMap = latestPracticeByPlayerDate(rows);
-      const week = aggregateWeek(latestMap, start);
-      renderWeek(week, start);
-
-      // Games aggregation
-      const gamesByDate = latestGameByPlayerDate(rows);
-      renderGames(gamesByDate);
-
-      document.getElementById('updatedAt').textContent =
-        `Updated: ${new Date(json.updatedAt || Date.now()).toLocaleString()}`;
-    } catch (e) {
-      document.getElementById('updatedAt').textContent = 'Failed to load data.';
-    }
+  async function saveSeason(){
+    const s=document.getElementById('seasonStart').value;
+    const e=document.getElementById('seasonEnd').value;
+    await api({ action:'saveSettings', settings:{ SeasonStart:s, SeasonEnd:e } });
+    await refresh();
   }
 
-  document.getElementById('refreshBtn').addEventListener('click', refresh);
+  // ====== Roster Manager ======
+  function renderRoster(roster){
+    const tb=document.querySelector('#rosterTable tbody'); tb.innerHTML='';
+    roster.forEach(r=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td>${r.player}</td>
+        <td>${r.division||''}</td>
+        <td>
+          <select data-move="${r.player}">
+            <option ${r.division==='D1'?'selected':''}>D1</option>
+            <option ${r.division==='D2'?'selected':''}>D2</option>
+            <option ${r.division==='D3'?'selected':''}>D3</option>
+            <option ${r.division==='D4'?'selected':''}>D4</option>
+          </select>
+          <button class="btn" data-move-btn="${r.player}">Move</button>
+        </td>
+        <td><button class="btn" data-remove="${r.player}">Remove</button></td>
+      `;
+      tb.appendChild(tr);
+    });
+
+    tb.querySelectorAll('button[data-remove]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const player=btn.getAttribute('data-remove');
+        await api({ action:'removePlayer', player });
+        await refresh();
+      });
+    });
+    tb.querySelectorAll('button[data-move-btn]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const player=btn.getAttribute('data-move-btn');
+        const sel=tb.querySelector(`select[data-move="${player}"]`);
+        await api({ action:'updatePlayerDivision', player, division: sel.value });
+        await refresh();
+      });
+    });
+  }
+
+  async function addPlayer(){
+    const name=document.getElementById('newPlayer').value.trim();
+    const div=document.getElementById('newDivision').value;
+    if(!name) return;
+    await api({ action:'addPlayer', player:name, division:div });
+    document.getElementById('newPlayer').value='';
+    await refresh();
+  }
+
+  // ====== Refresh all ======
+  async function refresh(){
+    document.getElementById('divBadge').textContent=`Division ${DIVISION}`;
+    document.getElementById('divSelect').value=DIVISION;
+    document.getElementById('updatedAt').textContent='Loading…';
+    const json = await api({ action:'read', division: DIVISION });
+    const rows = json.rows || [];
+    const start = startOfNextWeek();
+    const latest = latestPracticeByPlayerDate(rows);
+    const week = aggregateWeek(latest, start, DIVISION);
+    renderWeek(week, start);
+    renderPicks(week);
+    renderSeason(json.settings||{}, json.gamedays||{});
+    const allRoster = json.roster || []; // already division-filtered
+    renderRoster(allRoster);
+    document.getElementById('updatedAt').textContent = `Updated: ${new Date(json.updatedAt||Date.now()).toLocaleString()}`;
+  }
+
+  // Init
+  document.getElementById('applyDiv').addEventListener('click', ()=>{
+    const sel=document.getElementById('divSelect'); DIVISION=sel.value;
+    const u=new URL(location.href); u.searchParams.set('div', DIVISION); history.replaceState(null,'',u.toString());
+    refresh();
+  });
+  document.getElementById('saveSeason').addEventListener('click', saveSeason);
+  document.getElementById('addPlayerBtn').addEventListener('click', addPlayer);
+
   refresh();
 </script>
 </body>
