@@ -1,403 +1,270 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>Pickleball Admin Dashboard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root { --green:#2c6e49; --green2:#3d8b63; --bg:#f7f7f7; }
-    body { font-family: Arial, sans-serif; margin: 24px; background: var(--bg); }
-    .container { max-width: 1200px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
-    h1 { margin: 0 0 8px; color:var(--green); font-size: 24px; }
-    .toplinks { display:flex; gap:10px; margin-bottom:16px; }
-    .toplinks a { color: var(--green); text-decoration:none; font-size:14px; }
-    .row { display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin: 16px 0; }
-    .card { background:#f4f4f4; border-radius:10px; padding:16px; }
-    .card h3 { margin:0 0 8px; font-size:16px; }
-    table { width:100%; border-collapse: collapse; }
-    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align: top; }
-    th { background:#fafafa; }
-    .small { font-size:12px; color:#666; }
-    .counts { font-weight:bold; }
-    .btn { display:inline-block; padding:8px 12px; background:var(--green); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
-    .btn:hover { background:var(--green2); }
-    .pill { display:inline-block; background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; margin:4px 6px 0 0; font-size:12px; }
-    .inline { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
-    .badge { display:inline-block; background:#eef7f0; color:#2c6e49; padding:4px 10px; border-radius:999px; font-size:12px; margin-left:8px; }
-    select, input[type="text"], input[type="date"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
-    .muted { color:#777; font-size:12px; }
-    .readonly { opacity: .75; }
-    .nowrap { white-space: nowrap; }
-    .chips { display:flex; gap:6px; flex-wrap: wrap; }
-    .chip { background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; font-size:12px; }
-    .header-tools { display:flex; align-items:center; justify-content: space-between; gap:12px; flex-wrap: wrap; }
-  </style>
-</head>
-<body>
-<div class="container">
-  <div class="toplinks">
-    <a href="./index.html">← Player Form</a>
-  </div>
-  <h1>Admin Dashboard <span id="divBadge" class="badge"></span></h1>
+/**** CONFIG (edit these if your tab names differ) ****/
+const DATA_SHEET     = 'Sheet1';   // data rows
+const ROSTER_SHEET   = 'Roster';   // Player, Division
+const SETTINGS_SHEET = 'Settings'; // Key, Value (SeasonStart, SeasonEnd)
+const GAMEDAYS_SHEET = 'GameDays'; // Date, Division, IsBye, Start, CoachNote
 
-  <div class="inline small" style="margin:6px 0 16px 0;">
-    Division:
-    <select id="divSelect">
-      <option>D1</option><option>D2</option><option>D3</option><option selected>D4</option>
-    </select>
-    <button class="btn" id="applyDiv">Apply</button>
-    <span id="updatedAt" class="small">Loading…</span>
-  </div>
+/**** HELPERS ****/
+function ss_(){ return SpreadsheetApp.getActiveSpreadsheet(); }
+function sh_(name){ const s=ss_().getSheetByName(name); if(!s) throw new Error('Sheet not found: '+name); return s; }
 
-  <div class="row">
-    <div class="card">
-      <h3>Next Week — Practice Availability (Sun–Fri)</h3>
-      <div class="small" id="weekRangeNote">—</div>
-      <table id="weekTable">
-        <thead>
-          <tr>
-            <th>Day</th>
-            <th>Date</th>
-            <th>6–8 AM</th>
-            <th>8–10 AM</th>
-            <th>12–2 PM</th>
-            <th>7–10 PM</th>
-            <th>Players</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
+function readTable_(sheetName){
+  const sh=sh_(sheetName), v=sh.getDataRange().getValues();
+  if(!v.length) return {headers:[],rows:[]};
+  const headers=v[0]; const rows=v.slice(1).map(r=>{const o={}; headers.forEach((h,i)=>o[h]=r[i]); return o;});
+  return {headers, rows};
+}
 
-    <div class="card">
-      <h3>Practice Picks (Top 2 windows, next week)</h3>
-      <div id="picks"></div>
-      <div class="small">Based on latest submissions per player in this division.</div>
-      <button class="btn" id="refreshBtn">Refresh</button>
-    </div>
-  </div>
+function readSettings_(){
+  const {headers, rows} = readTable_(SETTINGS_SHEET);
+  const out={}; rows.forEach(r=>{ out[r['Key']] = r['Value']; });
+  return out;
+}
 
-  <div class="card">
-    <h3>Season Manager</h3>
-    <div class="inline small">
-      <label>Season Start: <input type="date" id="seasonStart"></label>
-      <label>Season End: <input type="date" id="seasonEnd"></label>
-      <button class="btn" id="saveSeason">Save Season</button>
-      <button class="btn" id="seedNow">Seed Saturdays Now</button>
-    </div>
-    <div class="small" style="margin-top:8px;">Set Saturdays (Bye or Start: any time like 06:45 / 08:20 / TOURNAMENT / TBD)</div>
-    <table id="gamedaysTable" style="margin-top:10px;">
-      <thead>
-        <tr>
-          <th>Date</th><th>Bye?</th><th>Start</th><th>Coach Note</th><th>Action</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
+function ensureHeaders_(){
+  // Run once if you need to stamp headers
+  sh_(DATA_SHEET).getRange(1,1,1,12).setValues([[
+    'Timestamp','Player','Division','Type','Practice Date','Day',
+    'Practice: 6-8 AM','Practice: 8-10 AM','Practice: 12-2 PM','Practice: 7-10 PM',
+    'Game Date','Available for Game?'
+  ]]);
+  sh_(ROSTER_SHEET).getRange(1,1,1,2).setValues([['Player','Division']]);
+  sh_(SETTINGS_SHEET).getRange(1,1,1,2).setValues([['Key','Value']]);
+  sh_(GAMEDAYS_SHEET).getRange(1,1,1,5).setValues([['Date','Division','IsBye','Start','CoachNote']]);
+}
 
-  <!-- NEW: Game Responses (YES/NO per date) -->
-  <div class="card">
-    <div class="header-tools">
-      <h3>Game Responses (YES / NO)</h3>
-      <label class="small"><input type="checkbox" id="showPast"> Show past dates</label>
-    </div>
-    <table id="responsesTable" style="margin-top:10px;">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Time</th>
-          <th>YES <span class="small">(count)</span></th>
-          <th>NO <span class="small">(count)</span></th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
+/**** ROSTER ****/
+function readRoster_(division){
+  const {headers, rows} = readTable_(ROSTER_SHEET);
+  const hasDiv = headers.includes('Division');
+  let list = rows
+    .map(r => ({
+      player: (r['Player']||'').toString().trim(),
+      division: hasDiv ? (r['Division']||'').toString().trim().toUpperCase() : ''
+    }))
+    .filter(x => x.player);
 
-  <div class="card">
-    <h3>Roster Management</h3>
-    <div class="inline small">
-      <label>Player: <input type="text" id="newPlayer" placeholder="Full name"></label>
-      <label>Division:
-        <select id="newDivision"><option>D1</option><option>D2</option><option>D3</option><option selected>D4</option></select>
-      </label>
-      <button class="btn" id="addPlayerBtn">Add Player</button>
-    </div>
-    <table id="rosterTable" style="margin-top:10px;">
-      <thead>
-        <tr><th>Player</th><th>Division</th><th>Move To</th><th>Remove</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
-</div>
-
-<script>
-  const API_URL = "https://round-fog-5a5e.randyjosselyn.workers.dev/";
-  const urlParams = new URLSearchParams(location.search);
-  let DIVISION = (urlParams.get('div') || 'D4').toUpperCase();
-
-  function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
-  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
-  function listSatsBetween(startISO,endISO){
-    const out=[]; if(!startISO || !endISO) return out;
-    let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00'); let cur=new Date(s);
-    const off=(6-cur.getDay()+7)%7; cur.setDate(cur.getDate()+off); cur.setHours(0,0,0,0);
-    while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); }
-    return out;
+  if (division) {
+    // Fallback: if Division is missing/blank on a row, treat it as the requested division
+    list = list.filter(x => (x.division || division).toUpperCase() === division.toUpperCase());
   }
-  function timeLabel(v){
-    if (!v) return '';
-    const t=String(v).trim();
-    const U=t.toUpperCase();
-    if (U==='TOURNAMENT' || U==='TBD') return U;
-    const m=t.match(/(\b\d{1,2}):(\d{2})/);
-    if (m) return `${m[1].padStart(2,'0')}:${m[2]}`;
-    const d=new Date(t); if(!isNaN(d)) return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    return t;
+  return list;
+}
+
+function upsertRoster_(player, division){
+  const sh = sh_(ROSTER_SHEET);
+  const {headers, rows} = readTable_(ROSTER_SHEET);
+  const pIdx=headers.indexOf('Player');
+  const dIdx=headers.indexOf('Division');
+  if (pIdx===-1) throw new Error('Roster missing "Player" header');
+  if (dIdx===-1) {
+    // add Division header
+    sh.getRange(1, headers.length+1, 1, 1).setValues([['Division']]);
+  }
+  const all = readTable_(ROSTER_SHEET); // refresh
+  const headers2 = all.headers; const rows2 = all.rows;
+  const find = rows2.findIndex(r => (r['Player']||'').toString().trim().toUpperCase() === player.toUpperCase());
+  const values = headers2.map(h => {
+    if (h==='Player') return player;
+    if (h==='Division') return (division||'').toUpperCase();
+    return '';
+  });
+  if (find===-1) {
+    sh.appendRow(values);
+  } else {
+    sh.getRange(find+2, 1, 1, headers2.length).setValues([values]);
+  }
+  return true;
+}
+
+function deleteRosterPlayer_(player){
+  const sh=sh_(ROSTER_SHEET);
+  const {headers, rows} = readTable_(ROSTER_SHEET);
+  const idx = rows.findIndex(r => (r['Player']||'').toString().trim().toUpperCase() === player.toUpperCase());
+  if (idx>-1) { sh.deleteRow(idx+2); return true; }
+  return false;
+}
+
+/**** GAMEDAYS (per Division) ****/
+function readGameDays_(division){
+  const {rows} = readTable_(GAMEDAYS_SHEET);
+  return rows
+    .filter(r => (r['Division']||'').toString().trim().toUpperCase() === (division||'').toString().trim().toUpperCase())
+    .map(r => ({
+      Date: (r['Date']||'').toString().trim(),
+      Division: (r['Division']||'').toString().trim().toUpperCase(),
+      IsBye: ((r['IsBye']||'').toString().trim().toLowerCase()==='yes') ? 'Yes':'No',
+      Start: (r['Start']||'').toString().trim(),
+      CoachNote: (r['CoachNote']||'').toString().trim()
+    }));
+}
+
+function upsertGameDay_(dateISO, division, isBye, start, note){
+  const sh=sh_(GAMEDAYS_SHEET);
+  const {headers, rows} = readTable_(GAMEDAYS_SHEET);
+  // Ensure headers
+  const need = ['Date','Division','IsBye','Start','CoachNote'].filter(h => !headers.includes(h));
+  if (need.length){
+    sh.getRange(1, headers.length+1, 1, need.length).setValues([need]);
+  }
+  const all = readTable_(GAMEDAYS_SHEET);
+  const rows2 = all.rows; const headers2=all.headers;
+  // Find existing row matching Date+Division
+  const idx = rows2.findIndex(r =>
+    (r['Date']||'').toString().trim() === dateISO &&
+    (r['Division']||'').toString().trim().toUpperCase() === division.toUpperCase()
+  );
+  const values = headers2.map(h => {
+    if (h==='Date') return dateISO;
+    if (h==='Division') return division.toUpperCase();
+    if (h==='IsBye') return isBye ? 'Yes':'No';
+    if (h==='Start') return isBye ? '' : (start||'');
+    if (h==='CoachNote') return note||'';
+    return '';
+  });
+  if (idx===-1){
+    sh.appendRow(values);
+  } else {
+    sh.getRange(idx+2, 1, 1, headers2.length).setValues([values]);
+  }
+}
+
+/**** API ENDPOINTS ****/
+function doGet(e){
+  return ContentService.createTextOutput('OK').setMimeType(ContentService.MimeType.TEXT);
+}
+
+function doPost(e){
+  let data={}; try{ data=JSON.parse(e.postData.contents); }catch(_){}
+  const action=(data.action||'').toLowerCase();
+  const division=(data.division||'').toString().trim().toUpperCase();
+
+  // ----- READERS -----
+  if (action==='roster'){
+    return json_({ status:'success', roster: readRoster_(division) });
   }
 
-  async function api(body){
-    const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify(body) });
-    return res.json();
-  }
-
-  // ====== Aggregations ======
-  function latestPracticeByPlayerDate(rows){
-    const map=new Map();
-    rows.forEach(r=>{
-      if((r['Type']||'').toString().toLowerCase()!=='practice') return;
-      const player=(r['Player']||'').toString().trim();
-      const division=(r['Division']||'').toString().trim().toUpperCase();
-      const date=(r['Practice Date']||'').toString().trim();
-      if(!player || !date) return;
-      const ts=new Date(r['Timestamp']).getTime()||0;
-      const key = `${player}\n${division}\n${date}`;
-      const curr=map.get(key);
-      if(!curr || ts>curr.ts){ map.set(key,{ ts, p68:!!r['Practice: 6-8 AM'], p810:!!r['Practice: 8-10 AM'], p122:!!r['Practice: 12-2 PM'], p710:!!r['Practice: 7-10 PM'] }); }
-    });
-    return map;
-  }
-
-  function latestGameByPlayerDate(rows){
-    const map=new Map(); // key: player\ndivision\ndate -> {ts, val}
-    rows.forEach(r=>{
-      if((r['Type']||'').toString().toLowerCase()!=='game') return;
-      const player=(r['Player']||'').toString().trim();
-      const division=(r['Division']||'').toString().trim().toUpperCase();
-      const date=(r['Game Date']||'').toString().trim();
-      if(!player || !date) return;
-      const ts=new Date(r['Timestamp']).getTime()||0;
-      const val=(r['Available for Game?']||'').toString().trim(); // Yes/No/''
-      const key=`${player}\n${division}\n${date}`;
-      const curr=map.get(key);
-      if(!curr || ts>curr.ts){ map.set(key,{ts,val}); }
-    });
-    return map;
-  }
-
-  function renderWeek(week, start){
-    const tb=document.querySelector('#weekTable tbody'); tb.innerHTML='';
-    const end=new Date(start); end.setDate(start.getDate()+5);
-    document.getElementById('weekRangeNote').textContent = `${start.toLocaleDateString(undefined,{month:'short',day:'numeric'})} – ${end.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
-    week.forEach(day=>{
-      const players=new Set([...day.names68, ...day.names810, ...day.names122, ...day.names710]);
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td>${day.label}</td>
-        <td>${new Date(day.iso+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'})}</td>
-        <td class="counts">${day.names68.size}</td>
-        <td class="counts">${day.names810.size}</td>
-        <td class="counts">${day.names122.size}</td>
-        <td class="counts">${day.names710.size}</td>
-        <td>${[...players].sort().join(', ')}</td>
-      `;
-      tb.appendChild(tr);
+  if (action==='read'){
+    const rowsPayload = readTable_(DATA_SHEET);
+    const settings = readSettings_();
+    const gamedays = division ? readGameDays_(division) : [];
+    return json_({
+      status:'success',
+      ...rowsPayload,
+      roster: readRoster_(division),
+      settings,
+      gamedays,
+      updatedAt: new Date().toISOString()
     });
   }
 
-  function renderPicks(week){
-    const counts=[{k:'6–8 AM',s:new Set()},{k:'8–10 AM',s:new Set()},{k:'12–2 PM',s:new Set()},{k:'7–10 PM',s:new Set()}];
-    week.forEach(d=>{ d.names68.forEach(n=>counts[0].s.add(n)); d.names810.forEach(n=>counts[1].s.add(n)); d.names122.forEach(n=>counts[2].s.add(n)); d.names710.forEach(n=>counts[3].s.add(n)); });
-    const picks=counts.map(c=>({k:c.k,n:c.s.size})).sort((a,b)=>b.n-a.n).slice(0,2).filter(x=>x.n>0);
-    document.getElementById('picks').innerHTML = picks.length? picks.map(p=>`• ${p.k} (${p.n} available)`).join('<br/>') : 'No availability yet.';
+  if (action==='getsettings'){
+    return json_({ status:'success', settings: readSettings_(), gamedays: readGameDays_(division) });
   }
 
-  function renderSeason(settings, gamedays){
-    document.getElementById('seasonStart').value = (settings.SeasonStart||'').split('T')[0] || '';
-    document.getElementById('seasonEnd').value   = (settings.SeasonEnd||'').split('T')[0] || '';
-    const tb=document.querySelector('#gamedaysTable tbody'); tb.innerHTML='';
-    const list = listSatsBetween(settings.SeasonStart, settings.SeasonEnd);
-    const byDate = new Map(gamedays.map(x=>[x.Date,x]));
-
-    list.forEach(date=>{
-      const meta= byDate.get(date) || { IsBye:'No', Start:'', CoachNote:'' };
-      const isExisting = byDate.has(date);
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
-        <td>
-          <select data-date="${date}" data-field="isbye" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
-            <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
-            <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
-          </select>
-        </td>
-        <td>
-          <input type="text" data-date="${date}" data-field="start" placeholder="e.g., 06:45, 08:20, TOURNAMENT, TBD" value="${timeLabel(meta.Start)}" ${meta.IsBye==='Yes' || isExisting ? 'disabled':''} class="${isExisting?'readonly':''}">
-        </td>
-        <td>
-          <input type="text" data-date="${date}" data-field="coach" placeholder="Coach note" value="${(meta.CoachNote||'').replace(/"/g,'&quot;')}" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
-        </td>
-        <td>
-          <button class="btn" data-edit="${date}" ${isExisting? '' : 'style="display:none;"'}>Edit</button>
-          <button class="btn" data-save="${date}" ${isExisting? 'style="display:none;"':''}>Save</button>
-        </td>
-      `;
-      tb.appendChild(tr);
+  // ----- WRITE: Settings, GameDays -----
+  if (action==='savesettings'){
+    const s=data.settings||{};
+    Object.keys(s).forEach(k=>{
+      const sh=sh_(SETTINGS_SHEET);
+      const {headers,rows}=readTable_(SETTINGS_SHEET);
+      const idx=rows.findIndex(r => (r['Key']||'')===k);
+      if (!headers.includes('Key') || !headers.includes('Value')){
+        sh.getRange(1,1,1,2).setValues([['Key','Value']]);
+      }
+      if (idx===-1){
+        sh.appendRow([k, s[k]||'']);
+      } else {
+        sh.getRange(idx+2,1,1,2).setValues([[k, s[k]||'']]);
+      }
     });
-
-    tb.querySelectorAll('select[data-field="isbye"]').forEach(sel=>{
-      sel.addEventListener('change', ()=>{
-        const date=sel.getAttribute('data-date');
-        const start=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
-        start.disabled = (sel.value==='Yes');
-      });
-    });
-
-    tb.querySelectorAll('button[data-edit]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const date=btn.getAttribute('data-edit');
-        const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
-        const startInp=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
-        const noteInp =tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
-        [isByeSel,startInp,noteInp].forEach(el=>{ el.disabled=false; el.classList.remove('readonly'); });
-        tb.querySelector(`button[data-save="${date}"]`).style.display='inline-block';
-        btn.style.display='none';
-      });
-    });
-
-    tb.querySelectorAll('button[data-save]').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const date=btn.getAttribute('data-save');
-        const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
-        const startInp=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
-        const noteInp =tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
-        await api({ action:'setgameday', division: DIVISION, date, isBye: (isByeSel.value==='Yes'), start: startInp.disabled? '' : startInp.value, coachNote: noteInp.value||'' });
-        await refresh();
-      });
-    });
+    return json_({ status:'success', settings: readSettings_() });
   }
 
-  function renderResponses(roster, gamedays, gameMap){
-    const tb=document.querySelector('#responsesTable tbody'); tb.innerHTML='';
-    const showPast=document.getElementById('showPast').checked;
-
-    // build index for quick lookup of latest Yes/No per player/date
-    const latest = gameMap; // key: player\nDIV\ndate -> {ts,val}
-    const players = (roster||[]).map(r=>r.player).filter(Boolean);
-
-    // map gamedays by date for this division (non-BYE)
-    const dates = (gamedays||[]).filter(g=>g.IsBye==='No').map(g=>({ date:g.Date, start: g.Start||'', note: g.CoachNote||'' }))
-                                 .sort((a,b)=> a.date.localeCompare(b.date));
-
-    const todayISO = (()=>{ const d=new Date(); d.setHours(0,0,0,0); return ymd(d); })();
-
-    dates.filter(x => showPast || x.date>=todayISO).forEach(g => {
-      const yes=[], no=[];
-      players.forEach(p => {
-        const key = `${p}\n${DIVISION}\n${g.date}`;
-        const rec = latest.get(key);
-        if (rec && rec.val){
-          if (rec.val.toLowerCase()==='yes') yes.push(p);
-          else if (rec.val.toLowerCase()==='no') no.push(p);
-        }
-      });
-
-      const tr=document.createElement('tr');
-      const d=new Date(g.date+'T00:00:00');
-      tr.innerHTML = `
-        <td class="nowrap">${d.toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
-        <td class="nowrap">${timeLabel(g.start)}</td>
-        <td>
-          <div class="small counts">${yes.length}</div>
-          <div class="chips">${yes.map(n=>`<span class=\"chip\">${n}</span>`).join('')}</div>
-        </td>
-        <td>
-          <div class="small counts">${no.length}</div>
-          <div class="chips">${no.map(n=>`<span class=\"chip\">${n}</span>`).join('')}</div>
-        </td>
-      `;
-      tb.appendChild(tr);
-    });
+  if (action==='setgameday'){
+    // expects: { date, division, isBye, start, coachNote }
+    upsertGameDay_(data.date, division, !!data.isBye, data.start||'', data.coachNote||'');
+    return json_({ status:'success', gamedays: readGameDays_(division) });
   }
 
-  async function saveSeason(){
-    const s=document.getElementById('seasonStart').value;
-    const e=document.getElementById('seasonEnd').value;
-    await api({ action:'savesettings', settings:{ SeasonStart:s, SeasonEnd:e } });
-    await api({ action:'seedgamedays', division: DIVISION });
-    await refresh();
+  // ----- WRITE: Roster -----
+  if (action==='addplayer'){
+    if (!data.player) return json_({ status:'error', message:'Player required' }, 400);
+    upsertRoster_(data.player, (data.division||''));
+    return json_({ status:'success', roster: readRoster_(division) });
   }
 
-  function renderRoster(roster){
-    const tb=document.querySelector('#rosterTable tbody'); tb.innerHTML='';
-    roster.forEach(r=>{
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td>${r.player}</td>
-        <td>${r.division||''}</td>
-        <td>
-          <select data-move="${r.player}">
-            <option ${r.division==='D1'?'selected':''}>D1</option>
-            <option ${r.division==='D2'?'selected':''}>D2</option>
-            <option ${r.division==='D3'?'selected':''}>D3</option>
-            <option ${r.division==='D4'?'selected':''}>D4</option>
-          </select>
-          <button class="btn" data-move-btn="${r.player}">Move</button>
-        </td>
-        <td><button class="btn" data-remove="${r.player}">Remove</button></td>
-      `;
-      tb.appendChild(tr);
-    });
-
-    tb.querySelectorAll('button[data-remove]').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{ const player=btn.getAttribute('data-remove'); await api({ action:'removeplayer', player }); await refresh(); });
-    });
-    tb.querySelectorAll('button[data-move-btn]').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{ const player=btn.getAttribute('data-move-btn'); const sel=tb.querySelector(`select[data-move="${player}"]`); await api({ action:'updateplayerdivision', player, division: sel.value }); await refresh(); });
-    });
+  if (action==='removeplayer'){
+    if (!data.player) return json_({ status:'error', message:'Player required' }, 400);
+    deleteRosterPlayer_(data.player);
+    return json_({ status:'success', roster: readRoster_(division) });
   }
 
-  async function refresh(){
-    document.getElementById('divBadge').textContent=`Division ${DIVISION}`;
-    document.getElementById('divSelect').value=DIVISION;
-    document.getElementById('updatedAt').textContent='Loading…';
-
-    const json = await api({ action:'read', division: DIVISION });
-    const rows = json.rows || [];
-    const start = startOfNextWeek();
-    const latest = latestPracticeByPlayerDate(rows);
-    const week = aggregateWeek(latest, start, DIVISION);
-    renderWeek(week, start);
-    renderPicks(week);
-    renderSeason(json.settings||{}, json.gamedays||[]);
-    renderRoster(json.roster||[]);
-
-    // Build responses view (YES/NO per game)
-    const gameMap = latestGameByPlayerDate(rows);
-    renderResponses(json.roster||[], json.gamedays||[], gameMap);
-
-    document.getElementById('updatedAt').textContent = `Updated: ${new Date(json.updatedAt||Date.now()).toLocaleString()}`;
+  if (action==='updateplayerdivision'){
+    if (!data.player) return json_({ status:'error', message:'Player required' }, 400);
+    upsertRoster_(data.player, (data.division||''));
+    return json_({ status:'success', roster: readRoster_(division) });
   }
 
-  document.getElementById('applyDiv').addEventListener('click', ()=>{ const sel=document.getElementById('divSelect'); DIVISION=sel.value; const u=new URL(location.href); u.searchParams.set('div', DIVISION); history.replaceState(null,'',u.toString()); refresh(); });
-  document.getElementById('saveSeason').addEventListener('click', saveSeason);
-  document.getElementById('seedNow').addEventListener('click', async ()=>{ await api({ action:'seedgamedays', division: DIVISION }); await refresh(); });
-  document.getElementById('addPlayerBtn').addEventListener('click', async ()=>{ const name=document.getElementById('newPlayer').value.trim(); const div=document.getElementById('newDivision').value; if(!name) return; await api({ action:'addplayer', player:name, division:div }); document.getElementById('newPlayer').value=''; await refresh(); });
-  document.getElementById('showPast').addEventListener('change', ()=> refresh());
+  // ----- WRITE: Practice (week) & Game availability -----
+  if (action==='submitweek'){
+    const week = Array.isArray(data.week) ? data.week : [];
+    const sh=sh_(DATA_SHEET);
+    const rows = week.map(it=> ([
+      new Date(),
+      data.player||'',
+      division||'',
+      'practice',
+      it?.date||'',
+      it?.day||'',
+      it?.p68 ? 'Yes':'',
+      it?.p810? 'Yes':'',
+      it?.p122? 'Yes':'',
+      it?.p710? 'Yes':'',
+      '',
+      ''
+    ]));
+    if (rows.length) sh.getRange(sh.getLastRow()+1,1,rows.length,rows[0].length).setValues(rows);
+    return json_({ status:'success', inserted: rows.length });
+  }
 
-  refresh();
-</script>
-</body>
-</html>
+  if (action==='submitgame'){
+    const sh=sh_(DATA_SHEET);
+    sh.appendRow([
+      new Date(), data.player||'', division||'',
+      'game','', '', '', '', '', '',
+      data.game_date||'', data.game_available||''
+    ]);
+    return json_({ status:'success' });
+  }
+
+  // Default
+  return json_({ status:'success' });
+}
+
+function json_(obj, code){
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**** UTIL: bulk set blank divisions (run once if needed) ****/
+function assignBlankDivisions_(defaultDiv){
+  const sh=sh_(ROSTER_SHEET);
+  const {headers, rows} = readTable_(ROSTER_SHEET);
+  let changed=0;
+  const pIdx=headers.indexOf('Player');
+  let dIdx=headers.indexOf('Division');
+  if (dIdx===-1){
+    sh.getRange(1, headers.length+1, 1, 1).setValues([['Division']]);
+    dIdx = headers.length; // after refresh, but we’ll operate directly on sheet
+  }
+  const last = sh.getLastRow();
+  for (let i=0;i<rows.length;i++){
+    const div = (rows[i]['Division']||'').toString().trim();
+    if (!div){
+      sh.getRange(i+2, headers.indexOf('Division')+1).setValue((defaultDiv||'D4').toUpperCase());
+      changed++;
+    }
+  }
+  return `Updated ${changed} rows`;
+}
