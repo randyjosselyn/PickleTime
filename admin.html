@@ -124,10 +124,9 @@
   function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
   function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function timeLabel(v){ if(!v) return ''; const t=String(v).trim(); const U=t.toUpperCase(); if(U==='TOURNAMENT'||U==='TBD') return U; const m=t.match(/(\b\d{1,2}):(\d{2})/); if(m) return `${m[1].padStart(2,'0')}:${m[2]}`; const d=new Date(t); if(!isNaN(d)) return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; return t; }
-
   async function api(body){ const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify(body) }); return res.json(); }
 
-  // ====== Aggregations (practice) ======
+  // ====== Practice aggregations ======
   function latestPracticeByPlayerDate(rows){
     const map=new Map();
     rows.forEach(r=>{
@@ -162,134 +161,41 @@
     return week;
   }
 
-  // ====== Build latest YES/NO per DATE (division-scoped) ======
-  function buildLatestByDate(rows, division){
-    const byDate = new Map(); // date -> Map(player -> {ts,val})
+  // ====== Compute counts per date directly from rows (latest per player) ======
+  function latestForDate(rows, division, date){
+    const perPlayer = new Map();
     rows.forEach(r => {
       if ((r['Type']||'').toString().toLowerCase()!=='game') return;
       const div = (r['Division']||'').toString().trim().toUpperCase();
       if (div !== division) return;
-      const date = (r['Game Date']||'').toString().trim();
-      if (!date) return;
+      const d = (r['Game Date']||'').toString().trim();
+      if (d !== date) return;
       const player = (r['Player']||'').toString().trim();
-      const ts = new Date(r['Timestamp']).getTime() || 0; // tolerate unparseable timestamp
-      const val = (r['Available for Game?']||'').toString().trim(); // Yes/No/''
-      if (!byDate.has(date)) byDate.set(date, new Map());
-      const m = byDate.get(date);
-      const curr = m.get(player);
-      if (!curr || ts > curr.ts) m.set(player, {ts, val});
+      const ts = new Date(r['Timestamp']).getTime() || 0;
+      const val = (r['Available for Game?']||'').toString().trim();
+      const curr = perPlayer.get(player);
+      if (!curr || ts > curr.ts) perPlayer.set(player,{ts,val});
     });
-    return byDate;
+    return perPlayer; // Map(player -> {ts,val})
   }
 
-  function renderWeek(week, start){
-    const tb=document.querySelector('#weekTable tbody'); tb.innerHTML='';
-    const end=new Date(start); end.setDate(start.getDate()+5);
-    document.getElementById('weekRangeNote').textContent = `${start.toLocaleDateString(undefined,{month:'short',day:'numeric'})} – ${end.toLocaleDateString(undefined,{month:'short',day:'numeric'})}`;
-    week.forEach(day=>{
-      const players=new Set([...day.names68, ...day.names810, ...day.names122, ...day.names710]);
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td>${day.label}</td>
-        <td>${new Date(day.iso+'T00:00:00').toLocaleDateString(undefined,{month:'short',day:'numeric'})}</td>
-        <td class="counts">${day.names68.size}</td>
-        <td class="counts">${day.names810.size}</td>
-        <td class="counts">${day.names122.size}</td>
-        <td class="counts">${day.names710.size}</td>
-        <td>${[...players].size? [...players].sort().join(', ') : ''}</td>
-      `;
-      tb.appendChild(tr);
-    });
-  }
-
-  function listSatsBetween(startISO,endISO){
-    const out=[]; if(!startISO || !endISO) return out;
-    let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00'); let cur=new Date(s);
-    const off=(6-cur.getDay()+7)%7; cur.setDate(cur.getDate()+off); cur.setHours(0,0,0,0);
-    while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); }
-    return out;
-  }
-
-  function renderSeason(settings, gamedays){
-    document.getElementById('seasonStart').value = (settings.SeasonStart||'').split('T')[0] || '';
-    document.getElementById('seasonEnd').value   = (settings.SeasonEnd||'').split('T')[0] || '';
-    const tb=document.querySelector('#gamedaysTable tbody'); tb.innerHTML='';
-    const list = listSatsBetween(settings.SeasonStart, settings.SeasonEnd);
-    const byDate = new Map(gamedays.map(x=>[x.Date,x]));
-
-    list.forEach(date=>{
-      const meta= byDate.get(date) || { IsBye:'No', Start:'', CoachNote:'' };
-      const isExisting = byDate.has(date);
-      const tr=document.createElement('tr');
-      tr.innerHTML=`
-        <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
-        <td>
-          <select data-date="${date}" data-field="isbye" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
-            <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
-            <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
-          </select>
-        </td>
-        <td>
-          <input type="text" data-date="${date}" data-field="start" placeholder="e.g., 06:45, 08:20, TOURNAMENT, TBD" value="${timeLabel(meta.Start)}" ${meta.IsBye==='Yes' || isExisting ? 'disabled':''} class="${isExisting?'readonly':''}">
-        </td>
-        <td>
-          <input type="text" data-date="${date}" data-field="coach" placeholder="Coach note" value="${(meta.CoachNote||'').replace(/"/g,'&quot;')}" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
-        </td>
-        <td>
-          <button class="btn" data-edit="${date}" ${isExisting? '' : 'style="display:none;"'}>Edit</button>
-          <button class="btn" data-save="${date}" ${isExisting? 'style="display:none;"':''}>Save</button>
-        </td>
-      `;
-      tb.appendChild(tr);
-    });
-
-    tb.querySelectorAll('select[data-field="isbye"]').forEach(sel=>{
-      sel.addEventListener('change', ()=>{
-        const date=sel.getAttribute('data-date');
-        const start=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
-        start.disabled = (sel.value==='Yes');
-      });
-    });
-
-    tb.querySelectorAll('button[data-edit]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const date=btn.getAttribute('data-edit');
-        const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
-        const startInp=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
-        const noteInp =tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
-        [isByeSel,startInp,noteInp].forEach(el=>{ el.disabled=false; el.classList.remove('readonly'); });
-        tb.querySelector(`button[data-save="${date}"]`).style.display='inline-block';
-        btn.style.display='none';
-      });
-    });
-
-    tb.querySelectorAll('button[data-save]').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const date=btn.getAttribute('data-save');
-        const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
-        const startInp=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
-        const noteInp =tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
-        await api({ action:'setgameday', division: DIVISION, date, isBye: (isByeSel.value==='Yes'), start: startInp.disabled? '' : startInp.value, coachNote: noteInp.value||'' });
-        await refresh();
-      });
-    });
-  }
-
-  function renderResponses(roster, gamedays, latestByDate){
+  function renderResponses(roster, gamedays, rows){
     const tb=document.querySelector('#responsesTable tbody'); tb.innerHTML='';
     const showPast=document.getElementById('showPast').checked;
 
     const rosterNames = new Set((roster||[]).map(r=> (r.player||'').toString().trim()).filter(Boolean));
     const dates = (gamedays||[]).filter(g=>g.IsBye==='No').map(g=>({ date:g.Date, start: g.Start||'' }))
                                  .sort((a,b)=> a.date.localeCompare(b.date));
+
     const todayISO = (()=>{ const d=new Date(); d.setHours(0,0,0,0); return ymd(d); })();
 
     dates.filter(x => showPast || x.date>=todayISO).forEach(g => {
-      const perDate = latestByDate.get(g.date) || new Map();
+      const perPlayer = latestForDate(rows, DIVISION, g.date);
       const yes=[], no=[];
-      // Count only roster players to keep it clean
-      (rosterNames.size? Array.from(rosterNames) : Array.from(perDate.keys())).forEach(p => {
-        const rec = perDate.get(p);
+      // Prefer roster list; if empty, iterate the perPlayer keys
+      const source = rosterNames.size? Array.from(rosterNames) : Array.from(perPlayer.keys());
+      source.forEach(p => {
+        const rec = perPlayer.get(p);
         if (rec && rec.val){
           const v = rec.val.toString().trim().toLowerCase();
           if (v==='yes') yes.push(p);
@@ -322,9 +228,8 @@
       renderWeek(week, start);
       renderSeason(json.settings||{}, json.gamedays||[]);
 
-      // NEW: compute latest by date and render responses
-      const latestByDate = buildLatestByDate(rows, DIVISION);
-      renderResponses(json.roster||[], json.gamedays||[], latestByDate);
+      // counts per date (direct)
+      renderResponses(json.roster||[], json.gamedays||[], rows);
 
       document.getElementById('updatedAt').textContent = `Updated: ${new Date(json.updatedAt||Date.now()).toLocaleString()}`;
     } catch (e) {
