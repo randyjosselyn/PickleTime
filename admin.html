@@ -15,15 +15,17 @@
     .card { background:#f4f4f4; border-radius:10px; padding:16px; }
     .card h3 { margin:0 0 8px; font-size:16px; }
     table { width:100%; border-collapse: collapse; }
-    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align: middle; }
+    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align: top; }
     th { background:#fafafa; }
     .small { font-size:12px; color:#666; }
     .counts { font-weight:bold; }
     .btn { display:inline-block; padding:8px 12px; background:var(--green); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
     .btn:hover { background:var(--green2); }
+    .pill { display:inline-block; background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; margin:4px 6px 0 0; font-size:12px; }
     .inline { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
     .badge { display:inline-block; background:#eef7f0; color:#2c6e49; padding:4px 10px; border-radius:999px; font-size:12px; margin-left:8px; }
     select, input[type="text"], input[type="date"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
+    .muted { color:#777; font-size:12px; }
     .readonly { opacity: .75; }
     .nowrap { white-space: nowrap; }
     .chips { display:flex; gap:6px; flex-wrap: wrap; }
@@ -112,7 +114,6 @@
       <tbody></tbody>
     </table>
   </div>
-
 </div>
 
 <script>
@@ -138,14 +139,7 @@
       const ts=new Date(r['Timestamp']).getTime()||0;
       const key = `${player}\n${division}\n${date}`;
       const curr=map.get(key);
-      if(!curr || ts>curr.ts){
-        map.set(key,{ ts,
-          p68: !!r['Practice: 6-8 AM'],
-          p810:!!r['Practice: 8-10 AM'],
-          p122:!!r['Practice: 12-2 PM'],
-          p710:!!r['Practice: 7-10 PM']
-        });
-      }
+      if(!curr || ts>curr.ts){ map.set(key,{ ts, p68:!!r['Practice: 6-8 AM'], p810:!!r['Practice: 8-10 AM'], p122:!!r['Practice: 12-2 PM'], p710:!!r['Practice: 7-10 PM'] }); }
     });
     return map;
   }
@@ -168,6 +162,26 @@
     return week;
   }
 
+  // ====== Build latest YES/NO per DATE (division-scoped) ======
+  function buildLatestByDate(rows, division){
+    const byDate = new Map(); // date -> Map(player -> {ts,val})
+    rows.forEach(r => {
+      if ((r['Type']||'').toString().toLowerCase()!=='game') return;
+      const div = (r['Division']||'').toString().trim().toUpperCase();
+      if (div !== division) return;
+      const date = (r['Game Date']||'').toString().trim();
+      if (!date) return;
+      const player = (r['Player']||'').toString().trim();
+      const ts = new Date(r['Timestamp']).getTime() || 0; // tolerate unparseable timestamp
+      const val = (r['Available for Game?']||'').toString().trim(); // Yes/No/''
+      if (!byDate.has(date)) byDate.set(date, new Map());
+      const m = byDate.get(date);
+      const curr = m.get(player);
+      if (!curr || ts > curr.ts) m.set(player, {ts, val});
+    });
+    return byDate;
+  }
+
   function renderWeek(week, start){
     const tb=document.querySelector('#weekTable tbody'); tb.innerHTML='';
     const end=new Date(start); end.setDate(start.getDate()+5);
@@ -188,7 +202,6 @@
     });
   }
 
-  // ====== Season Manager (read-only after first save) ======
   function listSatsBetween(startISO,endISO){
     const out=[]; if(!startISO || !endISO) return out;
     let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00'); let cur=new Date(s);
@@ -196,6 +209,7 @@
     while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); }
     return out;
   }
+
   function renderSeason(settings, gamedays){
     document.getElementById('seasonStart').value = (settings.SeasonStart||'').split('T')[0] || '';
     document.getElementById('seasonEnd').value   = (settings.SeasonEnd||'').split('T')[0] || '';
@@ -222,8 +236,8 @@
           <input type="text" data-date="${date}" data-field="coach" placeholder="Coach note" value="${(meta.CoachNote||'').replace(/"/g,'&quot;')}" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
         </td>
         <td>
-          <button class="btn" data-edit="${date}" ${isExisting? '' : 'style=\"display:none;\"'}>Edit</button>
-          <button class="btn" data-save="${date}" ${isExisting? 'style=\"display:none;\"':''}>Save</button>
+          <button class="btn" data-edit="${date}" ${isExisting? '' : 'style="display:none;"'}>Edit</button>
+          <button class="btn" data-save="${date}" ${isExisting? 'style="display:none;"':''}>Save</button>
         </td>
       `;
       tb.appendChild(tr);
@@ -244,7 +258,7 @@
         const startInp=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
         const noteInp =tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
         [isByeSel,startInp,noteInp].forEach(el=>{ el.disabled=false; el.classList.remove('readonly'); });
-        tb.querySelector(`button[data-save=\"${date}\"]`).style.display='inline-block';
+        tb.querySelector(`button[data-save="${date}"]`).style.display='inline-block';
         btn.style.display='none';
       });
     });
@@ -261,39 +275,25 @@
     });
   }
 
-  // ====== YES/NO responses card ======
-  function latestGameByPlayerDate(rows){
-    const map=new Map(); // key: player\ndivision\ndate -> {ts, val}
-    rows.forEach(r=>{
-      if((r['Type']||'').toString().toLowerCase()!=='game') return;
-      const player=(r['Player']||'').toString().trim();
-      const division=(r['Division']||'').toString().trim().toUpperCase();
-      const date=(r['Game Date']||'').toString().trim();
-      if(!player || !date) return;
-      const ts=new Date(r['Timestamp']).getTime()||0;
-      const val=(r['Available for Game?']||'').toString().trim();
-      const key=`${player}\n${division}\n${date}`;
-      const curr=map.get(key);
-      if(!curr || ts>curr.ts){ map.set(key,{ts,val}); }
-    });
-    return map;
-  }
-  function renderResponses(roster, gamedays, gameMap){
+  function renderResponses(roster, gamedays, latestByDate){
     const tb=document.querySelector('#responsesTable tbody'); tb.innerHTML='';
     const showPast=document.getElementById('showPast').checked;
-    const players = (roster||[]).map(r=>r.player).filter(Boolean);
+
+    const rosterNames = new Set((roster||[]).map(r=> (r.player||'').toString().trim()).filter(Boolean));
     const dates = (gamedays||[]).filter(g=>g.IsBye==='No').map(g=>({ date:g.Date, start: g.Start||'' }))
                                  .sort((a,b)=> a.date.localeCompare(b.date));
     const todayISO = (()=>{ const d=new Date(); d.setHours(0,0,0,0); return ymd(d); })();
 
     dates.filter(x => showPast || x.date>=todayISO).forEach(g => {
+      const perDate = latestByDate.get(g.date) || new Map();
       const yes=[], no=[];
-      players.forEach(p => {
-        const key = `${p}\n${DIVISION}\n${g.date}`;
-        const rec = gameMap.get(key);
+      // Count only roster players to keep it clean
+      (rosterNames.size? Array.from(rosterNames) : Array.from(perDate.keys())).forEach(p => {
+        const rec = perDate.get(p);
         if (rec && rec.val){
-          if (rec.val.toLowerCase()==='yes') yes.push(p);
-          else if (rec.val.toLowerCase()==='no') no.push(p);
+          const v = rec.val.toString().trim().toLowerCase();
+          if (v==='yes') yes.push(p);
+          else if (v==='no') no.push(p);
         }
       });
       const tr=document.createElement('tr');
@@ -322,8 +322,9 @@
       renderWeek(week, start);
       renderSeason(json.settings||{}, json.gamedays||[]);
 
-      const gameMap = latestGameByPlayerDate(rows);
-      renderResponses(json.roster||[], json.gamedays||[], gameMap);
+      // NEW: compute latest by date and render responses
+      const latestByDate = buildLatestByDate(rows, DIVISION);
+      renderResponses(json.roster||[], json.gamedays||[], latestByDate);
 
       document.getElementById('updatedAt').textContent = `Updated: ${new Date(json.updatedAt||Date.now()).toLocaleString()}`;
     } catch (e) {
@@ -334,6 +335,7 @@
 
   document.getElementById('applyDiv').addEventListener('click', ()=>{ const sel=document.getElementById('divSelect'); DIVISION=sel.value; const u=new URL(location.href); u.searchParams.set('div', DIVISION); history.replaceState(null,'',u.toString()); refresh(); });
   document.getElementById('saveSeason').addEventListener('click', async ()=>{ const s=document.getElementById('seasonStart').value; const e=document.getElementById('seasonEnd').value; await api({ action:'savesettings', settings:{ SeasonStart:s, SeasonEnd:e } }); await api({ action:'seedgamedays', division: DIVISION }); await refresh(); });
+  document.getElementById('showPast').addEventListener('change', ()=> refresh());
 
   refresh();
 </script>
