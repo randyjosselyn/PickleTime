@@ -15,7 +15,7 @@
     .card { background:#f4f4f4; border-radius:10px; padding:16px; }
     .card h3 { margin:0 0 8px; font-size:16px; }
     table { width:100%; border-collapse: collapse; }
-    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align: middle; }
+    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align: top; }
     th { background:#fafafa; }
     .small { font-size:12px; color:#666; }
     .counts { font-weight:bold; }
@@ -27,6 +27,10 @@
     select, input[type="text"], input[type="date"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
     .muted { color:#777; font-size:12px; }
     .readonly { opacity: .75; }
+    .nowrap { white-space: nowrap; }
+    .chips { display:flex; gap:6px; flex-wrap: wrap; }
+    .chip { background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; font-size:12px; }
+    .header-tools { display:flex; align-items:center; justify-content: space-between; gap:12px; flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -92,6 +96,25 @@
     </table>
   </div>
 
+  <!-- NEW: Game Responses (YES/NO per date) -->
+  <div class="card">
+    <div class="header-tools">
+      <h3>Game Responses (YES / NO)</h3>
+      <label class="small"><input type="checkbox" id="showPast"> Show past dates</label>
+    </div>
+    <table id="responsesTable" style="margin-top:10px;">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Time</th>
+          <th>YES <span class="small">(count)</span></th>
+          <th>NO <span class="small">(count)</span></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
   <div class="card">
     <h3>Roster Management</h3>
     <div class="inline small">
@@ -124,12 +147,6 @@
     while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); }
     return out;
   }
-
-  async function api(body){
-    const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify(body) });
-    return res.json();
-  }
-
   function timeLabel(v){
     if (!v) return '';
     const t=String(v).trim();
@@ -141,7 +158,12 @@
     return t;
   }
 
-  // ====== Aggregations (same as earlier build) ======
+  async function api(body){
+    const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify(body) });
+    return res.json();
+  }
+
+  // ====== Aggregations ======
   function latestPracticeByPlayerDate(rows){
     const map=new Map();
     rows.forEach(r=>{
@@ -153,35 +175,26 @@
       const ts=new Date(r['Timestamp']).getTime()||0;
       const key = `${player}\n${division}\n${date}`;
       const curr=map.get(key);
-      if(!curr || ts>curr.ts){
-        map.set(key,{ ts,
-          p68: !!r['Practice: 6-8 AM'],
-          p810:!!r['Practice: 8-10 AM'],
-          p122:!!r['Practice: 12-2 PM'],
-          p710:!!r['Practice: 7-10 PM']
-        });
-      }
+      if(!curr || ts>curr.ts){ map.set(key,{ ts, p68:!!r['Practice: 6-8 AM'], p810:!!r['Practice: 8-10 AM'], p122:!!r['Practice: 12-2 PM'], p710:!!r['Practice: 7-10 PM'] }); }
     });
     return map;
   }
 
-  function aggregateWeek(map, start, division){
-    const days=['Sun','Mon','Tue','Wed','Thu','Fri'];
-    const week=[];
-    for(let i=0;i<6;i++){
-      const d=new Date(start); d.setDate(start.getDate()+i);
-      week.push({ label:days[i], iso: ymd(d), names68:new Set(), names810:new Set(), names122:new Set(), names710:new Set() });
-    }
-    map.forEach((rec, key)=>{
-      const [player, div, date]=key.split('\n');
-      if(div.toUpperCase()!==division.toUpperCase()) return;
-      const w=week.find(x=>x.iso===date); if(!w) return;
-      if(rec.p68) w.names68.add(player);
-      if(rec.p810) w.names810.add(player);
-      if(rec.p122) w.names122.add(player);
-      if(rec.p710) w.names710.add(player);
+  function latestGameByPlayerDate(rows){
+    const map=new Map(); // key: player\ndivision\ndate -> {ts, val}
+    rows.forEach(r=>{
+      if((r['Type']||'').toString().toLowerCase()!=='game') return;
+      const player=(r['Player']||'').toString().trim();
+      const division=(r['Division']||'').toString().trim().toUpperCase();
+      const date=(r['Game Date']||'').toString().trim();
+      if(!player || !date) return;
+      const ts=new Date(r['Timestamp']).getTime()||0;
+      const val=(r['Available for Game?']||'').toString().trim(); // Yes/No/''
+      const key=`${player}\n${division}\n${date}`;
+      const curr=map.get(key);
+      if(!curr || ts>curr.ts){ map.set(key,{ts,val}); }
     });
-    return week;
+    return map;
   }
 
   function renderWeek(week, start){
@@ -220,7 +233,7 @@
 
     list.forEach(date=>{
       const meta= byDate.get(date) || { IsBye:'No', Start:'', CoachNote:'' };
-      const isExisting = byDate.has(date); // if already saved at least once
+      const isExisting = byDate.has(date);
       const tr=document.createElement('tr');
       tr.innerHTML=`
         <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
@@ -244,7 +257,6 @@
       tb.appendChild(tr);
     });
 
-    // Wire enable/disable on Bye toggle for enabled rows
     tb.querySelectorAll('select[data-field="isbye"]').forEach(sel=>{
       sel.addEventListener('change', ()=>{
         const date=sel.getAttribute('data-date');
@@ -253,7 +265,6 @@
       });
     });
 
-    // Edit button: unlock row
     tb.querySelectorAll('button[data-edit]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const date=btn.getAttribute('data-edit');
@@ -266,7 +277,6 @@
       });
     });
 
-    // Save button
     tb.querySelectorAll('button[data-save]').forEach(btn=>{
       btn.addEventListener('click', async ()=>{
         const date=btn.getAttribute('data-save');
@@ -276,6 +286,49 @@
         await api({ action:'setgameday', division: DIVISION, date, isBye: (isByeSel.value==='Yes'), start: startInp.disabled? '' : startInp.value, coachNote: noteInp.value||'' });
         await refresh();
       });
+    });
+  }
+
+  function renderResponses(roster, gamedays, gameMap){
+    const tb=document.querySelector('#responsesTable tbody'); tb.innerHTML='';
+    const showPast=document.getElementById('showPast').checked;
+
+    // build index for quick lookup of latest Yes/No per player/date
+    const latest = gameMap; // key: player\nDIV\ndate -> {ts,val}
+    const players = (roster||[]).map(r=>r.player).filter(Boolean);
+
+    // map gamedays by date for this division (non-BYE)
+    const dates = (gamedays||[]).filter(g=>g.IsBye==='No').map(g=>({ date:g.Date, start: g.Start||'', note: g.CoachNote||'' }))
+                                 .sort((a,b)=> a.date.localeCompare(b.date));
+
+    const todayISO = (()=>{ const d=new Date(); d.setHours(0,0,0,0); return ymd(d); })();
+
+    dates.filter(x => showPast || x.date>=todayISO).forEach(g => {
+      const yes=[], no=[];
+      players.forEach(p => {
+        const key = `${p}\n${DIVISION}\n${g.date}`;
+        const rec = latest.get(key);
+        if (rec && rec.val){
+          if (rec.val.toLowerCase()==='yes') yes.push(p);
+          else if (rec.val.toLowerCase()==='no') no.push(p);
+        }
+      });
+
+      const tr=document.createElement('tr');
+      const d=new Date(g.date+'T00:00:00');
+      tr.innerHTML = `
+        <td class="nowrap">${d.toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
+        <td class="nowrap">${timeLabel(g.start)}</td>
+        <td>
+          <div class="small counts">${yes.length}</div>
+          <div class="chips">${yes.map(n=>`<span class=\"chip\">${n}</span>`).join('')}</div>
+        </td>
+        <td>
+          <div class="small counts">${no.length}</div>
+          <div class="chips">${no.map(n=>`<span class=\"chip\">${n}</span>`).join('')}</div>
+        </td>
+      `;
+      tb.appendChild(tr);
     });
   }
 
@@ -330,6 +383,11 @@
     renderPicks(week);
     renderSeason(json.settings||{}, json.gamedays||[]);
     renderRoster(json.roster||[]);
+
+    // Build responses view (YES/NO per game)
+    const gameMap = latestGameByPlayerDate(rows);
+    renderResponses(json.roster||[], json.gamedays||[], gameMap);
+
     document.getElementById('updatedAt').textContent = `Updated: ${new Date(json.updatedAt||Date.now()).toLocaleString()}`;
   }
 
@@ -337,6 +395,7 @@
   document.getElementById('saveSeason').addEventListener('click', saveSeason);
   document.getElementById('seedNow').addEventListener('click', async ()=>{ await api({ action:'seedgamedays', division: DIVISION }); await refresh(); });
   document.getElementById('addPlayerBtn').addEventListener('click', async ()=>{ const name=document.getElementById('newPlayer').value.trim(); const div=document.getElementById('newDivision').value; if(!name) return; await api({ action:'addplayer', player:name, division:div }); document.getElementById('newPlayer').value=''; await refresh(); });
+  document.getElementById('showPast').addEventListener('change', ()=> refresh());
 
   refresh();
 </script>
