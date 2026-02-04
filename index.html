@@ -29,7 +29,8 @@
     .actions { display:flex; gap:10px; align-items:center; }
     .right { text-align:right; }
     .nowrap { white-space: nowrap; }
-    .controls-row { display:flex; gap:16px; align-items:center; justify-content: space-between; flex-wrap: wrap; }
+    .muted { color:#777; font-size:12px; }
+    .ro { opacity: .75; }
   </style>
 </head>
 <body>
@@ -52,12 +53,12 @@
 
   <!-- Practice section -->
   <div class="section">
-    <div class="controls-row">
+    <div class="actions" style="justify-content: space-between; flex-wrap: wrap;">
       <div>
         <label>Are you available to practice next week?</label>
         <div class="note" id="weekRangeNote">—</div>
       </div>
-      <div class="right"><button id="submitPracticeBtn">Save Practice Availability</button></div>
+      <button id="submitPracticeBtn">Save Practice Availability</button>
     </div>
     <table id="weekTable">
       <thead>
@@ -70,9 +71,9 @@
     <p id="practiceStatus" class="note" style="margin-top:8px;"></p>
   </div>
 
-  <!-- Games section: radio Yes/No per game + Save All -->
+  <!-- Games section: radio Yes/No per game + Save All + Show Past toggle -->
   <div class="section">
-    <div class="controls-row">
+    <div class="actions" style="justify-content: space-between; flex-wrap: wrap;">
       <div>
         <label>Game Availability</label>
         <div class="note" id="gamesNote">(Listing scheduled games for your division. BYE weeks are hidden.)</div>
@@ -87,6 +88,7 @@
           <th>Time</th>
           <th>Coach Note</th>
           <th colspan="2" class="nowrap">Available</th>
+          <th class="nowrap">Edit</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -105,26 +107,23 @@
   const DIVISION = (params.get('div') || 'D4').toUpperCase();
 
   // ====== Date helpers ======
-  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
+  function todayISO(){ const d=new Date(); d.setHours(0,0,0,0); return ymd(d); }
+  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function formatHuman(d){ return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }
   function displayStart(v){
     if (v==null) return '—';
     const t = String(v).trim();
     if (!t) return '—';
     const U = t.toUpperCase();
-    if (U==='TOURNAMENT') return 'TOURNAMENT';
-    if (U==='TBD') return 'TBD';
-    // Extract HH:MM if present anywhere (handles 1899 date strings from Sheets)
+    if (U==='TOURNAMENT' || U==='TBD') return U;
     const m = t.match(/(\b\d{1,2}):(\d{2})/);
     if (m) return `${m[1].padStart(2,'0')}:${m[2]}`;
-    // If parseable as Date string, format time
-    const d = new Date(t);
-    if (!isNaN(d)) return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    const d = new Date(t); if (!isNaN(d)) return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
     return t;
   }
 
-  // ====== Build practice week table (Sun–Fri) ======
+  // ====== Practice week table (Sun–Fri) ======
   function buildWeekTable(){
     const tbody=document.querySelector('#weekTable tbody'); tbody.innerHTML='';
     const start=startOfNextWeek(); const days=['Sun','Mon','Tue','Wed','Thu','Fri'];
@@ -166,13 +165,8 @@
     }
   }
 
-  // ====== Season + GameDays ======
-  let GAME_LIST = []; // {date, start, note}
-  function isPastISO(iso){
-    const today = new Date(); today.setHours(0,0,0,0);
-    const d = new Date(iso+'T00:00:00');
-    return d < today;
-  }
+  // ====== Season + GameDays (for listing games) ======
+  let GAME_LIST = []; // { date, start, note }
   async function loadSeasonAndGameDays(){
     try{
       const res = await fetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'getsettings', division: DIVISION }) });
@@ -181,39 +175,66 @@
       GAME_LIST = g.filter(x => (x.IsBye==='No'))
                    .map(x => ({ date: x.Date, start: x.Start||'', note: x.CoachNote||'' }))
                    .sort((a,b)=> a.date.localeCompare(b.date));
-      renderGamesTable();
+      // do not render yet; we need player's map first
     }catch(e){
       document.getElementById('gamesNote').textContent='(Could not load season schedule.)';
       GAME_LIST = [];
-      renderGamesTable();
     }
   }
+
+  // ====== Player game responses ======
+  let PREV_AVAIL = new Map();   // date -> 'Yes'|'No'
+  const EDITING = new Set();    // dates currently unlocked for editing
+
+  function isPastISO(iso){ const t=new Date(); t.setHours(0,0,0,0); const d=new Date(iso+'T00:00:00'); return d < t; }
 
   function renderGamesTable(playerAvailabilityMap){
     const tb = document.querySelector('#gamesTable tbody');
     tb.innerHTML='';
-    const existing = playerAvailabilityMap || new Map(); // key: date -> 'Yes'|'No'
+    const existing = playerAvailabilityMap || new Map(); // date -> 'Yes'|'No'
     const showPast = document.getElementById('showPast').checked;
-    const source = GAME_LIST.filter(g => showPast || !isPastISO(g.date));
-    source.forEach(g => {
-      const avail = existing.get(g.date) || '';
+
+    (GAME_LIST||[]).filter(g => showPast || !isPastISO(g.date)).forEach(g => {
+      const prev = existing.get(g.date) || '';
+      const isRO = !!prev && !EDITING.has(g.date);
       const d = new Date(g.date+'T00:00:00');
+      const yesChecked = (prev==='Yes');
+      const noChecked  = (prev==='No');
+      const disabledAttr = isRO ? 'disabled' : '';
+      const roClass = isRO ? 'ro' : '';
       const tr=document.createElement('tr');
+      tr.setAttribute('data-date', g.date);
       tr.innerHTML = `
-        <td class="nowrap">${d.toLocaleDateString(undefined,{weekday:'short'})}</td>
-        <td class="nowrap">${d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</td>
-        <td class="nowrap">${displayStart(g.start)}</td>
-        <td>${g.note? `<div class="coachnote">${g.note}</div>`:''}</td>
-        <td class="nowrap"><label><input type="radio" name="avail-${g.date}" value="Yes" ${avail==='Yes'?'checked':''}/> Yes</label></td>
-        <td class="nowrap"><label><input type="radio" name="avail-${g.date}" value="No"  ${avail==='No'?'checked':''}/> No</label></td>
+        <td class="nowrap ${roClass}">${d.toLocaleDateString(undefined,{weekday:'short'})}</td>
+        <td class="nowrap ${roClass}">${d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</td>
+        <td class="nowrap ${roClass}">${displayStart(g.start)}</td>
+        <td class="${roClass}">${g.note? `<div class=\"coachnote\">${g.note}</div>`:''}</td>
+        <td class="nowrap ${roClass}"><label><input type="radio" name="avail-${g.date}" value="Yes" ${yesChecked?'checked':''} ${disabledAttr}/> Yes</label></td>
+        <td class="nowrap ${roClass}"><label><input type="radio" name="avail-${g.date}" value="No"  ${noChecked?'checked':''} ${disabledAttr}/> No</label></td>
+        <td class="nowrap">
+          ${ prev ? `<button class="editBtn" data-date="${g.date}">${EDITING.has(g.date)?'Done':'Edit'}</button>` : '<span class="muted">—</span>' }
+        </td>
       `;
       tb.appendChild(tr);
+    });
+
+    // Wire Edit buttons
+    tb.querySelectorAll('button.editBtn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const date = btn.getAttribute('data-date');
+        if (EDITING.has(date)) {
+          EDITING.delete(date);
+        } else {
+          EDITING.add(date);
+        }
+        renderGamesTable(existing); // re-render toggling disabled state
+      });
     });
   }
 
   // Build availability map for the selected player from DATA rows
   function latestGameAvailabilityByDate(rows, player){
-    const map = new Map(); // date -> {ts,val}
+    const map = new Map(); // key: date -> {ts, val}
     rows.forEach(r => {
       if ((r['Type']||'').toString().toLowerCase()!=='game') return;
       const p = (r['Player']||'').toString().trim();
@@ -235,14 +256,15 @@
     const playerSel=document.getElementById('player');
     const playerText=document.getElementById('playerText');
     const player = playerSel.value || (playerText?playerText.value.trim():'');
-    if (!player){ renderGamesTable(new Map()); return; }
+    if (!player){ PREV_AVAIL = new Map(); EDITING.clear(); renderGamesTable(new Map()); return; }
     try{
       const res = await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'read', division: DIVISION }) });
       const json = await res.json();
       const rows = json.rows || [];
-      const map = latestGameAvailabilityByDate(rows, player);
-      renderGamesTable(map);
-    }catch(e){ renderGamesTable(new Map()); }
+      PREV_AVAIL = latestGameAvailabilityByDate(rows, player);
+      EDITING.clear(); // reset edit state whenever player changes
+      renderGamesTable(PREV_AVAIL);
+    }catch(e){ PREV_AVAIL = new Map(); EDITING.clear(); renderGamesTable(new Map()); }
   }
 
   async function savePractice(){
@@ -276,14 +298,20 @@
     const player=playerSel.value || (playerText?playerText.value.trim():'');
     if(!player){ status.innerHTML='<span class="error">Please select or enter your name.</span>'; return; }
 
+    const showPast = document.getElementById('showPast').checked;
     const updates = [];
-    GAME_LIST.forEach(g => {
-      const showPast = document.getElementById('showPast').checked;
-      if (!showPast && isPastISO(g.date)) return; // we didn't show it, don't save it either
+
+    (GAME_LIST||[]).forEach(g => {
+      if (!showPast && isPastISO(g.date)) return; // hidden rows not saved
       const yes = document.querySelector(`input[name="avail-${g.date}"][value="Yes"]`);
       const no  = document.querySelector(`input[name="avail-${g.date}"][value="No"]`);
-      const val = yes?.checked ? 'Yes' : (no?.checked ? 'No' : '');
-      if (val) updates.push({ date:g.date, val });
+      const selVal = yes?.checked ? 'Yes' : (no?.checked ? 'No' : '');
+      const prev = PREV_AVAIL.get(g.date) || '';
+      const edited = EDITING.has(g.date);
+      // New response (no prev) -> save if picked; Existing response -> save only if edited AND changed
+      if ((prev==='' && selVal) || (edited && selVal && selVal!==prev)) {
+        updates.push({ date:g.date, val: selVal });
+      }
     });
 
     if (!updates.length){ status.textContent='No changes to save.'; return; }
@@ -293,19 +321,27 @@
         fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'submitgame', player, division: DIVISION, game_date:u.date, game_available:u.val }) })
       ));
       status.innerHTML = `<span class="success">Saved ${updates.length} update(s).</span>`;
+      EDITING.clear();
+      await refreshPlayerGameSelections();
     }catch(e){ status.innerHTML='<span class="error">Network or server error. Please try again.</span>'; }
   }
 
-  function init(){
-    buildWeekTable();
-    loadRoster().then(()=>refreshPlayerGameSelections());
-    loadSeasonAndGameDays().then(()=>refreshPlayerGameSelections());
+  function wireEvents(){
     document.getElementById('player').addEventListener('change', refreshPlayerGameSelections);
-    const pt=document.getElementById('playerText'); if (pt) pt.addEventListener('blur', refreshPlayerGameSelections);
+    document.getElementById('playerText')?.addEventListener('blur', refreshPlayerGameSelections);
+    document.getElementById('showPast').addEventListener('change', ()=> renderGamesTable(PREV_AVAIL));
     document.getElementById('submitPracticeBtn').addEventListener('click', savePractice);
     document.getElementById('saveGamesBtn').addEventListener('click', saveAllGames);
-    document.getElementById('showPast').addEventListener('change', ()=>refreshPlayerGameSelections());
   }
+
+  async function init(){
+    buildWeekTable();
+    await loadRoster();
+    await loadSeasonAndGameDays();
+    wireEvents();
+    await refreshPlayerGameSelections();
+  }
+
   init();
 </script>
 </body>
