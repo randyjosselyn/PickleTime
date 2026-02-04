@@ -21,13 +21,10 @@
     .counts { font-weight:bold; }
     .btn { display:inline-block; padding:8px 12px; background:var(--green); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
     .btn:hover { background:var(--green2); }
-    .pill { display:inline-block; background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; margin:4px 6px 0 0; font-size:12px; }
     .inline { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
     .badge { display:inline-block; background:#eef7f0; color:#2c6e49; padding:4px 10px; border-radius:999px; font-size:12px; margin-left:8px; }
     select, input[type="text"], input[type="date"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
-    .muted { color:#777; font-size:12px; }
     .readonly { opacity: .75; }
-    .nowrap { white-space: nowrap; }
     .chips { display:flex; gap:6px; flex-wrap: wrap; }
     .chip { background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; font-size:12px; }
     .header-tools { display:flex; align-items:center; justify-content: space-between; gap:12px; flex-wrap: wrap; }
@@ -48,34 +45,6 @@
     </select>
     <button class="btn" id="applyDiv">Apply</button>
     <span id="updatedAt" class="small">Loading…</span>
-  </div>
-
-  <div class="row">
-    <div class="card">
-      <h3>Next Week — Practice Availability (Sun–Fri)</h3>
-      <div class="small" id="weekRangeNote">—</div>
-      <table id="weekTable">
-        <thead>
-          <tr>
-            <th>Day</th>
-            <th>Date</th>
-            <th>6–8 AM</th>
-            <th>8–10 AM</th>
-            <th>12–2 PM</th>
-            <th>7–10 PM</th>
-            <th>Players</th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
-
-    <div class="card">
-      <h3>Practice Picks (Top 2 windows, next week)</h3>
-      <div id="picks"></div>
-      <div class="small">Based on latest submissions per player in this division.</div>
-      <button class="btn" id="refreshBtn">Refresh</button>
-    </div>
   </div>
 
   <div class="card">
@@ -122,86 +91,85 @@
   let DIVISION = (urlParams.get('div') || 'D4').toUpperCase();
 
   function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
-  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function timeLabel(v){ if(!v) return ''; const t=String(v).trim(); const U=t.toUpperCase(); if(U==='TOURNAMENT'||U==='TBD') return U; const m=t.match(/(\b\d{1,2}):(\d{2})/); if(m) return `${m[1].padStart(2,'0')}:${m[2]}`; const d=new Date(t); if(!isNaN(d)) return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; return t; }
   async function api(body){ const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify(body) }); return res.json(); }
 
-  // ====== Practice aggregations ======
-  function latestPracticeByPlayerDate(rows){
-    const map=new Map();
-    rows.forEach(r=>{
-      if((r['Type']||'').toString().toLowerCase()!=='practice') return;
-      const player=(r['Player']||'').toString().trim();
-      const division=(r['Division']||'').toString().trim().toUpperCase();
-      const date=(r['Practice Date']||'').toString().trim();
-      if(!player || !date) return;
-      const ts=new Date(r['Timestamp']).getTime()||0;
-      const key = `${player}\n${division}\n${date}`;
-      const curr=map.get(key);
-      if(!curr || ts>curr.ts){ map.set(key,{ ts, p68:!!r['Practice: 6-8 AM'], p810:!!r['Practice: 8-10 AM'], p122:!!r['Practice: 12-2 PM'], p710:!!r['Practice: 7-10 PM'] }); }
+  function listSatsBetween(startISO,endISO){ const out=[]; if(!startISO||!endISO) return out; let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00'); let cur=new Date(s); const off=(6-cur.getDay()+7)%7; cur.setDate(cur.getDate()+off); cur.setHours(0,0,0,0); while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); } return out; }
+
+  function renderSeason(settings, gamedays){
+    document.getElementById('seasonStart').value = (settings.SeasonStart||'').split('T')[0] || '';
+    document.getElementById('seasonEnd').value   = (settings.SeasonEnd||'').split('T')[0] || '';
+    const tb=document.querySelector('#gamedaysTable tbody'); tb.innerHTML='';
+    const list = listSatsBetween(settings.SeasonStart, settings.SeasonEnd);
+    const byDate = new Map(gamedays.map(x=>[x.Date,x]));
+    list.forEach(date=>{
+      const meta= byDate.get(date) || { IsBye:'No', Start:'', CoachNote:'' };
+      const isExisting = byDate.has(date);
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
+        <td>
+          <select data-date="${date}" data-field="isbye" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
+            <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
+            <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
+          </select>
+        </td>
+        <td>
+          <input type="text" data-date="${date}" data-field="start" placeholder="e.g., 06:45, 08:20, TOURNAMENT, TBD" value="${timeLabel(meta.Start)}" ${meta.IsBye==='Yes' || isExisting ? 'disabled':''} class="${isExisting?'readonly':''}">
+        </td>
+        <td>
+          <input type="text" data-date="${date}" data-field="coach" placeholder="Coach note" value="${(meta.CoachNote||'').replace(/"/g,'&quot;')}" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
+        </td>
+        <td>
+          <button class="btn" data-edit="${date}" ${isExisting? '' : 'style="display:none;"'}>Edit</button>
+          <button class="btn" data-save="${date}" ${isExisting? 'style="display:none;"':''}>Save</button>
+        </td>
+      `;
+      tb.appendChild(tr);
     });
-    return map;
-  }
-  function aggregateWeek(map, start, division){
-    const days=['Sun','Mon','Tue','Wed','Thu','Fri'];
-    const week=[];
-    for(let i=0;i<6;i++){
-      const d=new Date(start); d.setDate(start.getDate()+i);
-      week.push({ label:days[i], iso: ymd(d), names68:new Set(), names810:new Set(), names122:new Set(), names710:new Set() });
-    }
-    map.forEach((rec, key)=>{
-      const [player, div, date]=key.split('\n');
-      if(div.toUpperCase()!==division.toUpperCase()) return;
-      const w=week.find(x=>x.iso===date); if(!w) return;
-      if(rec.p68) w.names68.add(player);
-      if(rec.p810) w.names810.add(player);
-      if(rec.p122) w.names122.add(player);
-      if(rec.p710) w.names710.add(player);
-    });
-    return week;
   }
 
-  // ====== Compute counts per date directly from rows (latest per player) ======
-  function latestForDate(rows, division, date){
-    const perPlayer = new Map();
+  // ====== YES/NO per date (case-insensitive name matching) ======
+  const norm = s => (s||'').toString().trim().toUpperCase();
+
+  function latestForDateCI(rows, division, date){
+    const per = new Map(); // key: NORM_NAME -> { ts, val, display }
     rows.forEach(r => {
       if ((r['Type']||'').toString().toLowerCase()!=='game') return;
-      const div = (r['Division']||'').toString().trim().toUpperCase();
-      if (div !== division) return;
-      const d = (r['Game Date']||'').toString().trim();
-      if (d !== date) return;
-      const player = (r['Player']||'').toString().trim();
-      const ts = new Date(r['Timestamp']).getTime() || 0;
-      const val = (r['Available for Game?']||'').toString().trim();
-      const curr = perPlayer.get(player);
-      if (!curr || ts > curr.ts) perPlayer.set(player,{ts,val});
+      const div = norm(r['Division']); if(div!==division) return;
+      const d = (r['Game Date']||'').toString().trim(); if (d!==date) return;
+      const display = (r['Player']||'').toString().trim(); const key = norm(display);
+      const ts = new Date(r['Timestamp']).getTime()||0; const val=(r['Available for Game?']||'').toString().trim();
+      const curr=per.get(key); if(!curr || ts>curr.ts) per.set(key,{ts,val,display});
     });
-    return perPlayer; // Map(player -> {ts,val})
+    return per;
   }
 
   function renderResponses(roster, gamedays, rows){
     const tb=document.querySelector('#responsesTable tbody'); tb.innerHTML='';
     const showPast=document.getElementById('showPast').checked;
 
-    const rosterNames = new Set((roster||[]).map(r=> (r.player||'').toString().trim()).filter(Boolean));
+    const rosterKeys = new Map(); // NORM_NAME -> display
+    (roster||[]).forEach(r=>{ const disp=(r.player||'').toString().trim(); if(disp){ rosterKeys.set(norm(disp), disp); }});
+
     const dates = (gamedays||[]).filter(g=>g.IsBye==='No').map(g=>({ date:g.Date, start: g.Start||'' }))
                                  .sort((a,b)=> a.date.localeCompare(b.date));
 
     const todayISO = (()=>{ const d=new Date(); d.setHours(0,0,0,0); return ymd(d); })();
 
     dates.filter(x => showPast || x.date>=todayISO).forEach(g => {
-      const perPlayer = latestForDate(rows, DIVISION, g.date);
+      const per = latestForDateCI(rows, DIVISION, g.date);
       const yes=[], no=[];
-      // Prefer roster list; if empty, iterate the perPlayer keys
-      const source = rosterNames.size? Array.from(rosterNames) : Array.from(perPlayer.keys());
-      source.forEach(p => {
-        const rec = perPlayer.get(p);
-        if (rec && rec.val){
-          const v = rec.val.toString().trim().toLowerCase();
-          if (v==='yes') yes.push(p);
-          else if (v==='no') no.push(p);
+
+      // If roster has names, iterate it; otherwise fallback to per-date respondents
+      const sourceKeys = rosterKeys.size ? Array.from(rosterKeys.keys()) : Array.from(per.keys());
+      sourceKeys.forEach(k => {
+        const rec = per.get(k);
+        if(rec && rec.val){ const v=rec.val.toString().trim().toLowerCase(); const name = rec.display || rosterKeys.get(k) || k;
+          if (v==='yes') yes.push(name); else if (v==='no') no.push(name);
         }
       });
+
       const tr=document.createElement('tr');
       const d=new Date(g.date+'T00:00:00');
       tr.innerHTML = `
@@ -222,13 +190,7 @@
 
       const json = await api({ action:'read', division: DIVISION });
       const rows = json.rows || [];
-      const start = startOfNextWeek();
-      const latest = latestPracticeByPlayerDate(rows);
-      const week = aggregateWeek(latest, start, DIVISION);
-      renderWeek(week, start);
       renderSeason(json.settings||{}, json.gamedays||[]);
-
-      // counts per date (direct)
       renderResponses(json.roster||[], json.gamedays||[], rows);
 
       document.getElementById('updatedAt').textContent = `Updated: ${new Date(json.updatedAt||Date.now()).toLocaleString()}`;
@@ -238,7 +200,7 @@
     }
   }
 
-  document.getElementById('applyDiv').addEventListener('click', ()=>{ const sel=document.getElementById('divSelect'); DIVISION=sel.value; const u=new URL(location.href); u.searchParams.set('div', DIVISION); history.replaceState(null,'',u.toString()); refresh(); });
+  document.getElementById('applyDiv').addEventListener('click', ()=>{ const sel=document.getElementById('divSelect'); DIVISION=sel.value.toUpperCase(); const u=new URL(location.href); u.searchParams.set('div', DIVISION); history.replaceState(null,'',u.toString()); refresh(); });
   document.getElementById('saveSeason').addEventListener('click', async ()=>{ const s=document.getElementById('seasonStart').value; const e=document.getElementById('seasonEnd').value; await api({ action:'savesettings', settings:{ SeasonStart:s, SeasonEnd:e } }); await api({ action:'seedgamedays', division: DIVISION }); await refresh(); });
   document.getElementById('showPast').addEventListener('change', ()=> refresh());
 
