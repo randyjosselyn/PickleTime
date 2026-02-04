@@ -118,12 +118,14 @@
   const urlParams = new URLSearchParams(location.search);
   let DIVISION = (urlParams.get('div') || 'D4').toUpperCase();
 
+  // ====== shared utils ======
   function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
   function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function timeLabel(v){ if(!v) return ''; const t=String(v).trim(); const U=t.toUpperCase(); if(U==='TOURNAMENT'||U==='TBD') return U; const m=t.match(/(\b\d{1,2}):(\d{2})/); if(m) return `${m[1].padStart(2,'0')}:${m[2]}`; const d=new Date(t); if(!isNaN(d)) return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; return t; }
   async function api(body){ const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify(body) }); return res.json(); }
+  const norm = s => (s||'').toString().trim().toUpperCase();
 
-  // ====== PRACTICE aggregation helpers (re-added) ======
+  // ====== PRACTICE helpers (present & wired) ======
   function latestPracticeByPlayerDate(rows){
     const map=new Map();
     rows.forEach(r=>{
@@ -184,8 +186,75 @@
     });
   }
 
-  // ====== YES/NO per date (case-insensitive, latest per player) ======
-  const norm = s => (s||'').toString().trim().toUpperCase();
+  // ====== SEASON manager (present & wired) ======
+  function listSatsBetween(startISO,endISO){ const out=[]; if(!startISO||!endISO) return out; let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00'); let cur=new Date(s); const off=(6-cur.getDay()+7)%7; cur.setDate(cur.getDate()+off); cur.setHours(0,0,0,0); while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); } return out; }
+  function renderSeason(settings, gamedays){
+    document.getElementById('seasonStart').value = (settings.SeasonStart||'').split('T')[0] || '';
+    document.getElementById('seasonEnd').value   = (settings.SeasonEnd||'').split('T')[0] || '';
+    const tb=document.querySelector('#gamedaysTable tbody'); tb.innerHTML='';
+    const list = listSatsBetween(settings.SeasonStart, settings.SeasonEnd);
+    const byDate = new Map(gamedays.map(x=>[x.Date,x]));
+    list.forEach(date=>{
+      const meta= byDate.get(date) || { IsBye:'No', Start:'', CoachNote:'' };
+      const isExisting = byDate.has(date);
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
+        <td>
+          <select data-date="${date}" data-field="isbye" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
+            <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
+            <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
+          </select>
+        </td>
+        <td>
+          <input type="text" data-date="${date}" data-field="start" placeholder="e.g., 06:45, 08:20, TOURNAMENT, TBD" value="${timeLabel(meta.Start)}" ${meta.IsBye==='Yes' || isExisting ? 'disabled':''} class="${isExisting?'readonly':''}">
+        </td>
+        <td>
+          <input type="text" data-date="${date}" data-field="coach" placeholder="Coach note" value="${(meta.CoachNote||'').replace(/"/g,'&quot;')}" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
+        </td>
+        <td>
+          <button class="btn" data-edit="${date}" ${isExisting? '' : 'style="display:none;"'}>Edit</button>
+          <button class="btn" data-save="${date}" ${isExisting? 'style="display:none;"':''}>Save</button>
+        </td>
+      `;
+      tb.appendChild(tr);
+    });
+
+    // enable/disable start on bye toggle
+    tb.querySelectorAll('select[data-field="isbye"]').forEach(sel=>{
+      sel.addEventListener('change', ()=>{
+        const date=sel.getAttribute('data-date');
+        const start=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
+        start.disabled = (sel.value==='Yes');
+      });
+    });
+
+    // edit/save handlers
+    tb.querySelectorAll('button[data-edit]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const date=btn.getAttribute('data-edit');
+        const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
+        const startInp=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
+        const noteInp =tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
+        [isByeSel,startInp,noteInp].forEach(el=>{ el.disabled=false; el.classList.remove('readonly'); });
+        tb.querySelector(`button[data-save="${date}"]`).style.display='inline-block';
+        btn.style.display='none';
+      });
+    });
+
+    tb.querySelectorAll('button[data-save]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const date=btn.getAttribute('data-save');
+        const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
+        const startInp=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
+        const noteInp =tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
+        await api({ action:'setgameday', division: DIVISION, date, isBye: (isByeSel.value==='Yes'), start: startInp.disabled? '' : startInp.value, coachNote: noteInp.value||'' });
+        await refresh();
+      });
+    });
+  }
+
+  // ====== RESPONSES (present & wired) ======
   function latestForDateCI(rows, division, date){
     const per = new Map(); // key: NORM_NAME -> { ts, val, display }
     rows.forEach(r => {
@@ -226,6 +295,7 @@
     });
   }
 
+  // ====== REFRESH ======
   async function refresh(){
     try {
       document.getElementById('divBadge').textContent=`Division ${DIVISION}`;
