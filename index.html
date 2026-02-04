@@ -16,7 +16,7 @@
     label { font-weight: bold; }
     select, input[type="text"] { width:100%; padding:10px; margin-top:8px; border:1px solid #ccc; border-radius:8px; font-size:14px; }
     table { width:100%; border-collapse: collapse; margin-top:10px; }
-    th, td { border-bottom:1px solid #e9e9e9; padding:8px; text-align:left; }
+    th, td { border-bottom:1px solid #e9e9e9; padding:8px; text-align:left; vertical-align: top; }
     th { background:#fafafa; }
     .checks { display:flex; gap:12px; align-items:center; }
     .checks label { font-weight: normal; }
@@ -29,6 +29,7 @@
     .actions { display:flex; gap:10px; align-items:center; }
     .right { text-align:right; }
     .nowrap { white-space: nowrap; }
+    .controls-row { display:flex; gap:16px; align-items:center; justify-content: space-between; flex-wrap: wrap; }
   </style>
 </head>
 <body>
@@ -49,10 +50,15 @@
     </div>
   </div>
 
-  <!-- Practice section (unchanged) -->
+  <!-- Practice section -->
   <div class="section">
-    <label>Are you available to practice next week?</label>
-    <div class="note" id="weekRangeNote">—</div>
+    <div class="controls-row">
+      <div>
+        <label>Are you available to practice next week?</label>
+        <div class="note" id="weekRangeNote">—</div>
+      </div>
+      <div class="right"><button id="submitPracticeBtn">Save Practice Availability</button></div>
+    </div>
     <table id="weekTable">
       <thead>
         <tr>
@@ -61,16 +67,18 @@
       </thead>
       <tbody></tbody>
     </table>
-    <div class="right" style="margin-top:10px;">
-      <button id="submitPracticeBtn">Save Practice Availability</button>
-    </div>
     <p id="practiceStatus" class="note" style="margin-top:8px;"></p>
   </div>
 
   <!-- Games section: radio Yes/No per game + Save All -->
   <div class="section">
-    <label>Game Availability</label>
-    <div class="note" id="gamesNote">(Listing all scheduled games for your division. BYE weeks are hidden.)</div>
+    <div class="controls-row">
+      <div>
+        <label>Game Availability</label>
+        <div class="note" id="gamesNote">(Listing scheduled games for your division. BYE weeks are hidden.)</div>
+      </div>
+      <label class="note"><input type="checkbox" id="showPast"> Show past dates</label>
+    </div>
     <table id="gamesTable">
       <thead>
         <tr>
@@ -92,7 +100,7 @@
 
 <script>
   // ====== CONFIG ======
-  const API_URL = "https://round-fog-5a5e.randyjosselyn.workers.dev/"; // worker forwards to Apps Script
+  const API_URL = "https://round-fog-5a5e.randyjosselyn.workers.dev/";
   const params = new URLSearchParams(location.search);
   const DIVISION = (params.get('div') || 'D4').toUpperCase();
 
@@ -100,20 +108,19 @@
   function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
   function formatHuman(d){ return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }
-  function isoToHuman(iso){ const d = new Date(iso+'T00:00:00'); return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric', year:'numeric'}); }
   function displayStart(v){
     if (v==null) return '—';
     const t = String(v).trim();
     if (!t) return '—';
     const U = t.toUpperCase();
     if (U==='TOURNAMENT') return 'TOURNAMENT';
-    // If looks like time within a date-string (1899...), try to extract HH:MM
+    if (U==='TBD') return 'TBD';
+    // Extract HH:MM if present anywhere (handles 1899 date strings from Sheets)
     const m = t.match(/(\b\d{1,2}):(\d{2})/);
     if (m) return `${m[1].padStart(2,'0')}:${m[2]}`;
-    // If parseable date, format HH:MM
+    // If parseable as Date string, format time
     const d = new Date(t);
     if (!isNaN(d)) return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
-    // else return as-is
     return t;
   }
 
@@ -159,14 +166,18 @@
     }
   }
 
-  // ====== Season + GameDays (for listing games) ======
-  let GAME_LIST = []; // {Date, Start, CoachNote}
+  // ====== Season + GameDays ======
+  let GAME_LIST = []; // {date, start, note}
+  function isPastISO(iso){
+    const today = new Date(); today.setHours(0,0,0,0);
+    const d = new Date(iso+'T00:00:00');
+    return d < today;
+  }
   async function loadSeasonAndGameDays(){
     try{
       const res = await fetch(API_URL, { method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'getsettings', division: DIVISION }) });
       const j=await res.json();
       const g=Array.isArray(j.gamedays)? j.gamedays: [];
-      // Keep only non-BYE for this division; include ad-hoc and Saturdays alike
       GAME_LIST = g.filter(x => (x.IsBye==='No'))
                    .map(x => ({ date: x.Date, start: x.Start||'', note: x.CoachNote||'' }))
                    .sort((a,b)=> a.date.localeCompare(b.date));
@@ -181,8 +192,10 @@
   function renderGamesTable(playerAvailabilityMap){
     const tb = document.querySelector('#gamesTable tbody');
     tb.innerHTML='';
-    const existing = playerAvailabilityMap || new Map(); // key: YYYY-MM-DD -> 'Yes' | 'No'
-    GAME_LIST.forEach(g => {
+    const existing = playerAvailabilityMap || new Map(); // key: date -> 'Yes'|'No'
+    const showPast = document.getElementById('showPast').checked;
+    const source = GAME_LIST.filter(g => showPast || !isPastISO(g.date));
+    source.forEach(g => {
       const avail = existing.get(g.date) || '';
       const d = new Date(g.date+'T00:00:00');
       const tr=document.createElement('tr');
@@ -200,7 +213,7 @@
 
   // Build availability map for the selected player from DATA rows
   function latestGameAvailabilityByDate(rows, player){
-    const map = new Map(); // key: date -> {ts, val}
+    const map = new Map(); // date -> {ts,val}
     rows.forEach(r => {
       if ((r['Type']||'').toString().toLowerCase()!=='game') return;
       const p = (r['Player']||'').toString().trim();
@@ -224,7 +237,6 @@
     const player = playerSel.value || (playerText?playerText.value.trim():'');
     if (!player){ renderGamesTable(new Map()); return; }
     try{
-      // read all rows to compute latest per player/date
       const res = await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'read', division: DIVISION }) });
       const json = await res.json();
       const rows = json.rows || [];
@@ -264,9 +276,10 @@
     const player=playerSel.value || (playerText?playerText.value.trim():'');
     if(!player){ status.innerHTML='<span class="error">Please select or enter your name.</span>'; return; }
 
-    // collect radio selections
     const updates = [];
     GAME_LIST.forEach(g => {
+      const showPast = document.getElementById('showPast').checked;
+      if (!showPast && isPastISO(g.date)) return; // we didn't show it, don't save it either
       const yes = document.querySelector(`input[name="avail-${g.date}"][value="Yes"]`);
       const no  = document.querySelector(`input[name="avail-${g.date}"][value="No"]`);
       const val = yes?.checked ? 'Yes' : (no?.checked ? 'No' : '');
@@ -280,21 +293,20 @@
         fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'submitgame', player, division: DIVISION, game_date:u.date, game_available:u.val }) })
       ));
       status.innerHTML = `<span class="success">Saved ${updates.length} update(s).</span>`;
-    }catch(e){
-      status.innerHTML='<span class="error">Network or server error. Please try again.</span>';
-    }
+    }catch(e){ status.innerHTML='<span class="error">Network or server error. Please try again.</span>'; }
   }
 
-  // ====== Init ======
-  buildWeekTable();
-  await loadRoster();
-  await loadSeasonAndGameDays();
-  document.getElementById('player').addEventListener('change', refreshPlayerGameSelections);
-  document.getElementById('playerText')?.addEventListener('blur', refreshPlayerGameSelections);
-  document.getElementById('submitPracticeBtn').addEventListener('click', savePractice);
-  document.getElementById('saveGamesBtn').addEventListener('click', saveAllGames);
-  // Prefill once after data loads
-  refreshPlayerGameSelections();
+  function init(){
+    buildWeekTable();
+    loadRoster().then(()=>refreshPlayerGameSelections());
+    loadSeasonAndGameDays().then(()=>refreshPlayerGameSelections());
+    document.getElementById('player').addEventListener('change', refreshPlayerGameSelections);
+    const pt=document.getElementById('playerText'); if (pt) pt.addEventListener('blur', refreshPlayerGameSelections);
+    document.getElementById('submitPracticeBtn').addEventListener('click', savePractice);
+    document.getElementById('saveGamesBtn').addEventListener('click', saveAllGames);
+    document.getElementById('showPast').addEventListener('change', ()=>refreshPlayerGameSelections());
+  }
+  init();
 </script>
 </body>
 </html>
