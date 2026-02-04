@@ -11,21 +11,22 @@
     h1 { margin: 0 0 8px; color:var(--green); font-size: 24px; }
     .toplinks { display:flex; gap:10px; margin-bottom:16px; }
     .toplinks a { color: var(--green); text-decoration:none; font-size:14px; }
-    .row { display:grid; grid-template-columns: repeat(2,1fr); gap:16px; margin: 16px 0; }
+    .row { display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin: 16px 0; }
     .card { background:#f4f4f4; border-radius:10px; padding:16px; }
     .card h3 { margin:0 0 8px; font-size:16px; }
     table { width:100%; border-collapse: collapse; }
-    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; }
+    th, td { border-bottom:1px solid #eee; padding:8px; text-align:left; vertical-align: middle; }
     th { background:#fafafa; }
     .small { font-size:12px; color:#666; }
     .counts { font-weight:bold; }
-    .btn { display:inline-block; padding:10px 12px; background:var(--green); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
+    .btn { display:inline-block; padding:8px 12px; background:var(--green); color:#fff; border:none; border-radius:8px; cursor:pointer; font-size:14px; }
     .btn:hover { background:var(--green2); }
     .pill { display:inline-block; background:#fff; border:1px solid #ddd; border-radius:999px; padding:4px 10px; margin:4px 6px 0 0; font-size:12px; }
     .inline { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
     .badge { display:inline-block; background:#eef7f0; color:#2c6e49; padding:4px 10px; border-radius:999px; font-size:12px; margin-left:8px; }
-    select, input[type="text"], input[type="date"], input[type="time"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
+    select, input[type="text"], input[type="date"] { padding:8px; border:1px solid #ccc; border-radius:8px; }
     .muted { color:#777; font-size:12px; }
+    .readonly { opacity: .75; }
   </style>
 </head>
 <body>
@@ -80,7 +81,7 @@
       <button class="btn" id="saveSeason">Save Season</button>
       <button class="btn" id="seedNow">Seed Saturdays Now</button>
     </div>
-    <div class="small" style="margin-top:8px;">Set Saturdays (Bye or Start: 06:45 / 08:20 / TOURNAMENT)</div>
+    <div class="small" style="margin-top:8px;">Set Saturdays (Bye or Start: any time like 06:45 / 08:20 / TOURNAMENT / TBD)</div>
     <table id="gamedaysTable" style="margin-top:10px;">
       <thead>
         <tr>
@@ -89,21 +90,6 @@
       </thead>
       <tbody></tbody>
     </table>
-  </div>
-
-  <div class="card">
-    <h3>Add Ad‑hoc Game (any date)</h3>
-    <div class="inline small">
-      <label>Date: <input type="date" id="adhocDate"></label>
-      <label>Time:
-        <input type="time" id="adhocTime" step="300"> <span class="muted">(optional)</span>
-      </label>
-      <label>or Free‑text time: <input type="text" id="adhocTimeText" placeholder="e.g., 9:15am, Night, TBD"></label>
-      <label>Note: <input type="text" id="adhocNote" placeholder="Optional coach note"></label>
-      <label>BYE? <input type="checkbox" id="adhocBye"></label>
-      <button class="btn" id="adhocBtn">Add/Update</button>
-    </div>
-    <div class="small">Rules: If BYE is checked, time is ignored. If both time fields are empty, start will be saved as <b>TBD</b>.</div>
   </div>
 
   <div class="card">
@@ -125,33 +111,39 @@
 </div>
 
 <script>
-  // ====== CONFIG ======
   const API_URL = "https://round-fog-5a5e.randyjosselyn.workers.dev/";
   const urlParams = new URLSearchParams(location.search);
   let DIVISION = (urlParams.get('div') || 'D4').toUpperCase();
 
-  // ====== Helpers ======
   function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
   function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function listSatsBetween(startISO,endISO){
     const out=[]; if(!startISO || !endISO) return out;
-    let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00');
-    let cur=new Date(s);
+    let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00'); let cur=new Date(s);
     const off=(6-cur.getDay()+7)%7; cur.setDate(cur.getDate()+off); cur.setHours(0,0,0,0);
     while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); }
     return out;
   }
-  const escAttr = (str) => String(str||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
 
-  // ====== Fetch ======
   async function api(body){
     const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify(body) });
     return res.json();
   }
 
-  // ====== Aggregations (division-aware) ======
+  function timeLabel(v){
+    if (!v) return '';
+    const t=String(v).trim();
+    const U=t.toUpperCase();
+    if (U==='TOURNAMENT' || U==='TBD') return U;
+    const m=t.match(/(\b\d{1,2}):(\d{2})/);
+    if (m) return `${m[1].padStart(2,'0')}:${m[2]}`;
+    const d=new Date(t); if(!isNaN(d)) return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    return t;
+  }
+
+  // ====== Aggregations (same as earlier build) ======
   function latestPracticeByPlayerDate(rows){
-    const map=new Map(); // key: player\ndivision\ndate -> latest
+    const map=new Map();
     rows.forEach(r=>{
       if((r['Type']||'').toString().toLowerCase()!=='practice') return;
       const player=(r['Player']||'').toString().trim();
@@ -162,7 +154,7 @@
       const key = `${player}\n${division}\n${date}`;
       const curr=map.get(key);
       if(!curr || ts>curr.ts){
-        map.set(key,{ ts, division,
+        map.set(key,{ ts,
           p68: !!r['Practice: 6-8 AM'],
           p810:!!r['Practice: 8-10 AM'],
           p122:!!r['Practice: 12-2 PM'],
@@ -213,82 +205,75 @@
   }
 
   function renderPicks(week){
-    const counts = [
-      { key:'6–8 AM', count: new Set() },
-      { key:'8–10 AM', count: new Set() },
-      { key:'12–2 PM', count: new Set() },
-      { key:'7–10 PM', count: new Set() }
-    ];
-    week.forEach(d=>{
-      d.names68.forEach(n=>counts[0].count.add(n));
-      d.names810.forEach(n=>counts[1].count.add(n));
-      d.names122.forEach(n=>counts[2].count.add(n));
-      d.names710.forEach(n=>counts[3].count.add(n));
-    });
-    const arr = counts.map(c=>({ key:c.key, size:c.count.size })).sort((a,b)=>b.size - a.size);
-    const picks = arr.slice(0,2).filter(x=>x.size>0);
-    const el=document.getElementById('picks');
-    el.innerHTML = picks.length ? picks.map(p=>`• ${p.key} (${p.size} available)`).join('<br/>') : 'No availability yet.';
+    const counts=[{k:'6–8 AM',s:new Set()},{k:'8–10 AM',s:new Set()},{k:'12–2 PM',s:new Set()},{k:'7–10 PM',s:new Set()}];
+    week.forEach(d=>{ d.names68.forEach(n=>counts[0].s.add(n)); d.names810.forEach(n=>counts[1].s.add(n)); d.names122.forEach(n=>counts[2].s.add(n)); d.names710.forEach(n=>counts[3].s.add(n)); });
+    const picks=counts.map(c=>({k:c.k,n:c.s.size})).sort((a,b)=>b.n-a.n).slice(0,2).filter(x=>x.n>0);
+    document.getElementById('picks').innerHTML = picks.length? picks.map(p=>`• ${p.k} (${p.n} available)`).join('<br/>') : 'No availability yet.';
   }
 
-  // ====== Season Manager ======
   function renderSeason(settings, gamedays){
-    document.getElementById('seasonStart').value = settings.SeasonStart || '';
-    document.getElementById('seasonEnd').value = settings.SeasonEnd || '';
+    document.getElementById('seasonStart').value = (settings.SeasonStart||'').split('T')[0] || '';
+    document.getElementById('seasonEnd').value   = (settings.SeasonEnd||'').split('T')[0] || '';
     const tb=document.querySelector('#gamedaysTable tbody'); tb.innerHTML='';
     const list = listSatsBetween(settings.SeasonStart, settings.SeasonEnd);
     const byDate = new Map(gamedays.map(x=>[x.Date,x]));
+
     list.forEach(date=>{
-      const meta = byDate.get(date) || { IsBye:'No', Start:'', CoachNote:'' };
+      const meta= byDate.get(date) || { IsBye:'No', Start:'', CoachNote:'' };
+      const isExisting = byDate.has(date); // if already saved at least once
       const tr=document.createElement('tr');
-      tr.innerHTML = `
+      tr.innerHTML=`
         <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
         <td>
-          <select data-date="${date}" data-field="isbye">
+          <select data-date="${date}" data-field="isbye" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
             <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
             <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
           </select>
         </td>
         <td>
-          <select data-date="${date}" data-field="start" ${meta.IsBye==='Yes'?'disabled':''}>
-            <option value="" ${!meta.Start?'selected':''}></option>
-            <option value="06:45" ${meta.Start==='06:45'?'selected':''}>06:45</option>
-            <option value="08:20" ${meta.Start==='08:20'?'selected':''}>08:20</option>
-            <option value="TOURNAMENT" ${meta.Start==='TOURNAMENT'?'selected':''}>TOURNAMENT</option>
-          </select>
+          <input type="text" data-date="${date}" data-field="start" placeholder="e.g., 06:45, 08:20, TOURNAMENT, TBD" value="${timeLabel(meta.Start)}" ${meta.IsBye==='Yes' || isExisting ? 'disabled':''} class="${isExisting?'readonly':''}">
         </td>
         <td>
-          <input type="text" data-date="${date}" data-field="coach" placeholder="Coach note" value="${escAttr(meta.CoachNote)}">
+          <input type="text" data-date="${date}" data-field="coach" placeholder="Coach note" value="${(meta.CoachNote||'').replace(/"/g,'&quot;')}" ${isExisting? 'disabled':''} class="${isExisting?'readonly':''}">
         </td>
-        <td><button class="btn" data-save="${date}">Save</button></td>
+        <td>
+          <button class="btn" data-edit="${date}" ${isExisting? '' : 'style="display:none;"'}>Edit</button>
+          <button class="btn" data-save="${date}" ${isExisting? 'style="display:none;"':''}>Save</button>
+        </td>
       `;
       tb.appendChild(tr);
     });
 
-    // Enable/disable Start when Bye toggled
+    // Wire enable/disable on Bye toggle for enabled rows
     tb.querySelectorAll('select[data-field="isbye"]').forEach(sel=>{
-      sel.addEventListener('change', ev=>{
+      sel.addEventListener('change', ()=>{
         const date=sel.getAttribute('data-date');
-        const startSel=tb.querySelector(`select[data-field="start"][data-date="${date}"]`);
-        startSel.disabled = sel.value==='Yes';
+        const start=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
+        start.disabled = (sel.value==='Yes');
       });
     });
 
-    // Save buttons
+    // Edit button: unlock row
+    tb.querySelectorAll('button[data-edit]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const date=btn.getAttribute('data-edit');
+        const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
+        const startInp=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
+        const noteInp =tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
+        [isByeSel,startInp,noteInp].forEach(el=>{ el.disabled=false; el.classList.remove('readonly'); });
+        tb.querySelector(`button[data-save="${date}"]`).style.display='inline-block';
+        btn.style.display='none';
+      });
+    });
+
+    // Save button
     tb.querySelectorAll('button[data-save]').forEach(btn=>{
       btn.addEventListener('click', async ()=>{
         const date=btn.getAttribute('data-save');
         const isByeSel=tb.querySelector(`select[data-field="isbye"][data-date="${date}"]`);
-        const startSel=tb.querySelector(`select[data-field="start"][data-date="${date}"]`);
-        const noteInp=tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
-        await api({
-          action:'setgameday',
-          division: DIVISION,
-          date,
-          isBye: isByeSel.value==='Yes',
-          start: startSel.disabled ? '' : startSel.value,
-          coachNote: noteInp.value || ''
-        });
+        const startInp=tb.querySelector(`input[data-field="start"][data-date="${date}"]`);
+        const noteInp =tb.querySelector(`input[data-field="coach"][data-date="${date}"]`);
+        await api({ action:'setgameday', division: DIVISION, date, isBye: (isByeSel.value==='Yes'), start: startInp.disabled? '' : startInp.value, coachNote: noteInp.value||'' });
         await refresh();
       });
     });
@@ -302,7 +287,6 @@
     await refresh();
   }
 
-  // ====== Roster Manager ======
   function renderRoster(roster){
     const tb=document.querySelector('#rosterTable tbody'); tb.innerHTML='';
     roster.forEach(r=>{
@@ -325,49 +309,13 @@
     });
 
     tb.querySelectorAll('button[data-remove]').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const player=btn.getAttribute('data-remove');
-        await api({ action:'removeplayer', player });
-        await refresh();
-      });
+      btn.addEventListener('click', async ()=>{ const player=btn.getAttribute('data-remove'); await api({ action:'removeplayer', player }); await refresh(); });
     });
-
     tb.querySelectorAll('button[data-move-btn]').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
-        const player=btn.getAttribute('data-move-btn');
-        const sel=tb.querySelector(`select[data-move="${player}"]`);
-        await api({ action:'updateplayerdivision', player, division: sel.value });
-        await refresh();
-      });
+      btn.addEventListener('click', async ()=>{ const player=btn.getAttribute('data-move-btn'); const sel=tb.querySelector(`select[data-move="${player}"]`); await api({ action:'updateplayerdivision', player, division: sel.value }); await refresh(); });
     });
   }
 
-  // ====== Ad-hoc game handler (any time or TBD) ======
-  async function addAdhoc(){
-    const date = (document.getElementById('adhocDate').value||'').trim();
-    const timeVal = (document.getElementById('adhocTime').value||'').trim(); // "HH:MM" 24h
-    const timeText = (document.getElementById('adhocTimeText').value||'').trim(); // free text like "9:15am" or "Night" or "TBD"
-    const coachNote = document.getElementById('adhocNote').value||'';
-    const isBye = document.getElementById('adhocBye').checked;
-    if (!date) return;
-
-    // Decide "start" string to store
-    let start = '';
-    if (isBye) {
-      start = ''; // ignored when BYE
-    } else if (timeText) {
-      start = timeText; // priority to free text
-    } else if (timeVal) {
-      start = timeVal;  // e.g., 09:15
-    } else {
-      start = 'TBD';
-    }
-
-    await api({ action:'adhocgame', division: DIVISION, date, start, coachNote, isBye });
-    await refresh();
-  }
-
-  // ====== Refresh all ======
   async function refresh(){
     document.getElementById('divBadge').textContent=`Division ${DIVISION}`;
     document.getElementById('divSelect').value=DIVISION;
@@ -381,28 +329,14 @@
     renderWeek(week, start);
     renderPicks(week);
     renderSeason(json.settings||{}, json.gamedays||[]);
-    const allRoster = json.roster || []; // already division-filtered
-    renderRoster(allRoster);
+    renderRoster(json.roster||[]);
     document.getElementById('updatedAt').textContent = `Updated: ${new Date(json.updatedAt||Date.now()).toLocaleString()}`;
   }
 
-  // Init
-  document.getElementById('applyDiv').addEventListener('click', ()=>{
-    const sel=document.getElementById('divSelect'); DIVISION=sel.value;
-    const u=new URL(location.href); u.searchParams.set('div', DIVISION); history.replaceState(null,'',u.toString());
-    refresh();
-  });
+  document.getElementById('applyDiv').addEventListener('click', ()=>{ const sel=document.getElementById('divSelect'); DIVISION=sel.value; const u=new URL(location.href); u.searchParams.set('div', DIVISION); history.replaceState(null,'',u.toString()); refresh(); });
   document.getElementById('saveSeason').addEventListener('click', saveSeason);
   document.getElementById('seedNow').addEventListener('click', async ()=>{ await api({ action:'seedgamedays', division: DIVISION }); await refresh(); });
-  document.getElementById('addPlayerBtn').addEventListener('click', async ()=>{
-    const name=document.getElementById('newPlayer').value.trim();
-    const div=document.getElementById('newDivision').value;
-    if(!name) return;
-    await api({ action:'addplayer', player:name, division:div });
-    document.getElementById('newPlayer').value='';
-    await refresh();
-  });
-  document.getElementById('adhocBtn').addEventListener('click', addAdhoc);
+  document.getElementById('addPlayerBtn').addEventListener('click', async ()=>{ const name=document.getElementById('newPlayer').value.trim(); const div=document.getElementById('newDivision').value; if(!name) return; await api({ action:'addplayer', player:name, division:div }); document.getElementById('newPlayer').value=''; await refresh(); });
 
   refresh();
 </script>
