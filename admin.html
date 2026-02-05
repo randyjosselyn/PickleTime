@@ -122,17 +122,32 @@
   function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
   function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function timeLabel(v){ if(!v) return ''; const t=String(v).trim(); const U=t.toUpperCase(); if(U==='TOURNAMENT'||U==='TBD') return U; const m=t.match(/(\b\d{1,2}):(\d{2})/); if(m) return `${m[1].padStart(2,'0')}:${m[2]}`; const d=new Date(t); if(!isNaN(d)) return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; return t; }
+  function toISODate(x){
+    if (x==null) return '';
+    if (typeof x === 'string'){
+      const s=x.trim();
+      // 1) YYYY-MM-DD
+      let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+      // 2) ISO with time: YYYY-MM-DDTHH:MM:SSZ
+      if (s.includes('T')) return s.slice(0,10);
+      // 3) Other (e.g., 2/7/2026)
+      const d=new Date(s); if(!isNaN(d)) return ymd(d);
+      return '';
+    }
+    // Date or number
+    const d=new Date(x); if(!isNaN(d)) return ymd(d); return '';
+  }
   async function api(body){ const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify(body) }); return res.json(); }
   const norm = s => (s||'').toString().trim().toUpperCase();
 
-  // ====== PRACTICE helpers (present & wired) ======
+  // ====== PRACTICE helpers ======
   function latestPracticeByPlayerDate(rows){
     const map=new Map();
     rows.forEach(r=>{
       if((r['Type']||'').toString().toLowerCase()!=='practice') return;
       const player=(r['Player']||'').toString().trim();
       const division=(r['Division']||'').toString().trim().toUpperCase();
-      const date=(r['Practice Date']||'').toString().trim();
+      const date=toISODate(r['Practice Date']);
       if(!player || !date) return;
       const ts=new Date(r['Timestamp']).getTime()||0;
       const key = `${player}\n${division}\n${date}`;
@@ -186,7 +201,7 @@
     });
   }
 
-  // ====== SEASON manager (present & wired) ======
+  // ====== SEASON manager ======
   function listSatsBetween(startISO,endISO){ const out=[]; if(!startISO||!endISO) return out; let s=new Date(startISO+'T00:00:00'); let e=new Date(endISO+'T00:00:00'); let cur=new Date(s); const off=(6-cur.getDay()+7)%7; cur.setDate(cur.getDate()+off); cur.setHours(0,0,0,0); while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); } return out; }
   function renderSeason(settings, gamedays){
     document.getElementById('seasonStart').value = (settings.SeasonStart||'').split('T')[0] || '';
@@ -220,7 +235,6 @@
       tb.appendChild(tr);
     });
 
-    // enable/disable start on bye toggle
     tb.querySelectorAll('select[data-field="isbye"]').forEach(sel=>{
       sel.addEventListener('change', ()=>{
         const date=sel.getAttribute('data-date');
@@ -229,7 +243,6 @@
       });
     });
 
-    // edit/save handlers
     tb.querySelectorAll('button[data-edit]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const date=btn.getAttribute('data-edit');
@@ -254,13 +267,13 @@
     });
   }
 
-  // ====== RESPONSES (present & wired) ======
+  // ====== RESPONSES ======
   function latestForDateCI(rows, division, date){
     const per = new Map(); // key: NORM_NAME -> { ts, val, display }
     rows.forEach(r => {
       if ((r['Type']||'').toString().toLowerCase()!=='game') return;
       const div = norm(r['Division']); if(div!==division) return;
-      const d = (r['Game Date']||'').toString().trim(); if (d!==date) return;
+      const d = toISODate(r['Game Date']); if (d!==date) return;
       const display = (r['Player']||'').toString().trim(); const key = norm(display);
       const ts = new Date(r['Timestamp']).getTime()||0; const val=(r['Available for Game?']||'').toString().trim();
       const curr=per.get(key); if(!curr || ts>curr.ts) per.set(key,{ts,val,display});
