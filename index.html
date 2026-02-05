@@ -5,9 +5,9 @@
   <title>Pickleball Team Availability</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { --green:#2c6e49; --green2:#3d8b63; --bg:#f7f7f7; --text:#1a1a1a; }
-    body { font-family: Arial, sans-serif; margin: 24px; background: var(--bg); color:var(--text); }
-    .container { max-width: 1000px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); position: relative; }
+    :root { --green:#2c6e49; --green2:#3d8b63; --bg:#f7f7f7; }
+    body { font-family: Arial, sans-serif; margin: 24px; background: var(--bg); }
+    .container { max-width: 900px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
     h1 { margin: 0 0 8px; color:var(--green); font-size: 24px; }
     .toplinks { display:flex; gap:10px; margin-bottom:16px; }
     .toplinks a { color: var(--green); text-decoration:none; font-size:14px; }
@@ -16,37 +16,23 @@
     label { font-weight: bold; }
     select, input[type="text"] { width:100%; padding:10px; margin-top:8px; border:1px solid #ccc; border-radius:8px; font-size:14px; }
     table { width:100%; border-collapse: collapse; margin-top:10px; }
-    th, td { border-bottom:1px solid #e9e9e9; padding:8px; text-align:left; vertical-align: top; }
+    th, td { border-bottom:1px solid #e9e9e9; padding:8px; text-align:left; }
     th { background:#fafafa; }
-    button { padding:12px 16px; background:var(--green); color:#fff; border:none; border-radius:10px; font-size:16px; cursor:pointer; }
+    .checks { display:flex; gap:12px; align-items:center; }
+    .checks label { font-weight: normal; }
+    button { width:100%; padding:14px; background:var(--green); color:#fff; border:none; border-radius:10px; font-size:16px; cursor:pointer; }
     button:hover { background:var(--green2); }
     .note { font-size: 12px; color:#666; }
     .success { color:#0a7d33; font-weight:bold; }
     .error { color:#b00020; font-weight:bold; }
-    .coachnote { background:#fffbe6; border:1px solid #f0e6a2; padding:6px 10px; border-radius:8px; white-space:pre-wrap; }
-    .actions { display:flex; gap:10px; align-items:center; justify-content: space-between; flex-wrap: wrap; }
-    .actions-left { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
-    .nowrap { white-space: nowrap; }
-    .muted { color:#777; font-size:12px; }
-    .ro { opacity:.75; }
-
-    /* Loading overlay */
-    .overlay { position:absolute; inset:0; background:rgba(255,255,255,.65); display:none; align-items:center; justify-content:center; z-index: 10; backdrop-filter: blur(2px); }
-    .spinner { width:48px; height:48px; border-radius:50%; border:4px solid #cde3d7; border-top-color: var(--green); animation: spin 1s linear infinite; }
-    @keyframes spin { to { transform: rotate(360deg); } }
+    .coachnote { background:#fffbe6; border:1px solid #f0e6a2; padding:10px; border-radius:8px; margin-top:8px; white-space:pre-wrap; }
   </style>
 </head>
 <body>
 <div class="container">
-  <div class="overlay" id="loadingOverlay" aria-hidden="true"><div class="spinner" aria-label="Loading"></div></div>
+    <h1>Pickleball Team Availability <span id="divBadge" class="badge"></span></h1>
+  <p class="note">Select your name, pick next week’s practice windows (multiple per day), and optionally mark a Saturday game date.</p>
 
-  <div class="toplinks">
-    <a href="./admin.html">Go to Admin Dashboard →</a>
-  </div>
-  <h1>Pickleball Team Availability <span id="divBadge" class="badge"></span></h1>
-  <p class="note">Select your name, pick next week’s practice windows (multiple per day), and update game availability.</p>
-
-  <!-- Player selector -->
   <div class="section">
     <label for="player">Player Name</label>
     <select id="player"><option value="">Loading roster…</option></select>
@@ -56,18 +42,9 @@
     </div>
   </div>
 
-  <!-- Practice section -->
   <div class="section">
-    <div class="actions">
-      <div>
-        <label>Are you available to practice next week?</label>
-        <div class="note" id="weekRangeNote">—</div>
-      </div>
-      <div class="actions-left">
-        <span id="practiceStatus" class="note"></span>
-        <button id="submitPracticeBtn">Save Practice Availability</button>
-      </div>
-    </div>
+    <label>Are you available to practice next week?</label>
+    <div class="note" id="weekRangeNote">—</div>
     <table id="weekTable">
       <thead>
         <tr>
@@ -78,81 +55,187 @@
     </table>
   </div>
 
-  <!-- Games section -->
   <div class="section">
-    <div class="actions" style="justify-content: space-between; flex-wrap: wrap;">
-      <div>
-        <label>Game Availability</label>
-        <div class="note" id="gamesNote">(Listing scheduled games for your division. BYE weeks are hidden.)</div>
-      </div>
-      <label class="note"><input type="checkbox" id="showPast"> Show past dates</label>
-    </div>
-    <table id="gamesTable">
-      <thead>
-        <tr>
-          <th>Day</th>
-          <th>Date</th>
-          <th>Time</th>
-          <th>Coach Note</th>
-          <th colspan="2" class="nowrap">Available</th>
-          <th class="nowrap">Edit</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-    <div class="actions" style="margin-top:10px;">
-      <button id="saveGamesBtn">Save All Game Responses</button>
-      <span id="gamesStatus" class="note"></span>
+    <label for="gameday">Saturday Game Date</label>
+    <select id="gameday"><option value="">Pick a Saturday…</option></select>
+    <div class="note" id="gamedayNote"></div>
+    <div id="coachNoteBox" class="coachnote" style="display:none;"></div>
+    <div class="checks" style="margin-top:12px;">
+      <label><input type="checkbox" id="gameAvailable" /> I am available for this game</label>
     </div>
   </div>
+
+  <button id="submitBtn">Submit</button>
+  <p id="statusMsg" class="note" style="margin-top:12px;"></p>
 </div>
 
 <script>
+  // ====== CONFIG ======
   const API_URL = "https://round-fog-5a5e.randyjosselyn.workers.dev/";
   const params = new URLSearchParams(location.search);
   const DIVISION = (params.get('div') || 'D4').toUpperCase();
 
+  // ====== Date helpers ======
+  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7||7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function ymd(d){ const y=d.getFullYear(); const m=String(d.getMonth()+1).padStart(2,'0'); const dd=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${dd}`; }
-  function startOfNextWeek(){ const d=new Date(); const day=d.getDay(); const add=(7-day)%7 || 7; d.setDate(d.getDate()+add); d.setHours(0,0,0,0); return d; }
   function formatHuman(d){ return d.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric'}); }
-  function toISODate(x){ if (x==null) return ''; if (typeof x==='string'){ const s=x.trim(); let m=s.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m) return `${m[1]}-${m[2]}-${m[3]}`; if (s.includes('T')) return s.slice(0,10); const d=new Date(s); if(!isNaN(d)) return ymd(d); return ''; } const d=new Date(x); if(!isNaN(d)) return ymd(d); return ''; }
-  function displayStart(v){ if (v==null) return '—'; const t=String(v).trim(); if(!t) return '—'; const U=t.toUpperCase(); if(U==='TOURNAMENT'||U==='TBD') return U; const m=t.match(/(\b\d{1,2}):(\d{2})/); if(m) return `${m[1].padStart(2,'0')}:${m[2]}`; const d=new Date(t); if(!isNaN(d)) return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; return t; }
+  function nextSaturday(from){ const d=new Date(from); const day=d.getDay(); const off=(6-day+7)%7||7; d.setDate(d.getDate()+off); d.setHours(0,0,0,0); return d; }
+  function saturdaysBetween(startISO,endISO){
+    const out=[]; if(!startISO||!endISO) return out;
+    let s=new Date(startISO+'T00:00:00'), e=new Date(endISO+'T00:00:00');
+    let cur=nextSaturday(s);
+    while(cur<=e){ out.push(ymd(cur)); cur.setDate(cur.getDate()+7); }
+    return out;
+  }
 
-  const norm = s => (s||'').toString().trim().toUpperCase();
+  // ====== Build week table (Sun–Fri) ======
+  function buildWeekTable(){
+    const tbody=document.querySelector('#weekTable tbody'); tbody.innerHTML='';
+    const start=startOfNextWeek(); const days=['Sun','Mon','Tue','Wed','Thu','Fri'];
+    const end=new Date(start); end.setDate(start.getDate()+5);
+    document.getElementById('weekRangeNote').textContent=`(${formatHuman(start)} – ${formatHuman(end)})`;
+    for(let i=0;i<6;i++){
+      const d=new Date(start); d.setDate(start.getDate()+i);
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td>${days[i]}</td>
+        <td data-date="${ymd(d)}">${formatHuman(d)}</td>
+        <td><input type="checkbox" data-slot="p68"></td>
+        <td><input type="checkbox" data-slot="p810"></td>
+        <td><input type="checkbox" data-slot="p122"></td>
+        <td><input type="checkbox" data-slot="p710"></td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
 
-  function buildWeekTable(){ const tbody=document.querySelector('#weekTable tbody'); tbody.innerHTML=''; const start=startOfNextWeek(); const days=['Sun','Mon','Tue','Wed','Thu','Fri']; const end=new Date(start); end.setDate(start.getDate()+5); document.getElementById('weekRangeNote').textContent=`(${formatHuman(start)} – ${formatHuman(end)})`; for(let i=0;i<6;i++){ const d=new Date(start); d.setDate(start.getDate()+i); const tr=document.createElement('tr'); tr.innerHTML=`<td>${days[i]}</td><td data-date="${ymd(d)}">${formatHuman(d)}</td><td><input type="checkbox" data-slot="p68"></td><td><input type="checkbox" data-slot="p810"></td><td><input type="checkbox" data-slot="p122"></td><td><input type="checkbox" data-slot="p710"></td>`; tbody.appendChild(tr);} }
+  // ====== Season + Coach Notes ======
+  let coachNoteMap = new Map(); // key: YYYY-MM-DD -> note (for this division)
+  async function loadSeasonAndGameDays(){
+    try{
+      
+const res = await fetch(API_URL, {
+  method: 'POST',
+  headers: {'Content-Type': 'text/plain;charset=utf-8'},
+  body: JSON.stringify({ action:'getsettings', division: DIVISION })
+});
 
-  async function loadRoster(){ document.getElementById('divBadge').textContent=`Division ${DIVISION}`; const playerSel=document.getElementById('player'); const fallback=document.getElementById('rosterFallback'); try{ const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'roster', division: DIVISION }) }); const json=await res.json(); const roster=Array.isArray(json?.roster)?json.roster:[]; playerSel.innerHTML=`<option value="">Select…</option>`; if(!roster.length){ fallback.style.display='block'; } else { roster.forEach(r=>{ const opt=document.createElement('option'); opt.value=r.player; opt.textContent=r.player; playerSel.appendChild(opt); }); fallback.style.display='none'; } }catch(e){ playerSel.innerHTML=`<option value="">(Roster unavailable)</option>`; fallback.style.display='block'; } }
+      
+      const j=await res.json();
+      const s=j.settings||{}; const g=j.gamedays||[]; const notes=j.coachNotes||[];
+      coachNoteMap = new Map(notes.filter(n => (n.Division||'').toUpperCase()===DIVISION).map(n => [n.Date, n.Note]));
+      populateGameDates(s, g);
+    }catch(e){
+      fallbackGameDates();
+    }
+  }
+  function populateGameDates(settings, gamedays){
+    const sel=document.getElementById('gameday');
+    const note=document.getElementById('gamedayNote');
+    sel.innerHTML=`<option value="">Pick a Saturday…</option>`;
+    const startISO=settings.SeasonStart, endISO=settings.SeasonEnd;
+    if(!startISO||!endISO){ note.textContent='(Season not set yet)'; fallbackGameDates(); return; }
+    note.textContent=`Season: ${startISO} → ${endISO}`;
+    const byDate=new Map(gamedays.map(x=>[x.Date,x]));
+    saturdaysBetween(startISO,endISO).forEach(date=>{
+      const meta=byDate.get(date);
+      if(meta && meta.IsBye==='Yes') return;
+      const labelMeta = meta
+  ? (meta.Start==='TOURNAMENT'
+      ? 'TOURNAMENT'
+      : (meta.Start ? `${meta.Start} start` : ''))
+  : '';
+const notePart = meta && meta.CoachNote ? ` — ${meta.CoachNote}` : '';
+const human=new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+opt.textContent = (labelMeta ? `${human} — ${labelMeta}` : human) + notePart;
+      const human=new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+      const opt=document.createElement('option');
+      opt.value=date; opt.textContent=labelMeta ? `${human} — ${labelMeta}` : human;
+      sel.appendChild(opt);
+    });
+  }
+  function fallbackGameDates(){
+    const sel=document.getElementById('gameday');
+    const note=document.getElementById('gamedayNote');
+    note.textContent='(Using default Saturdays: next Saturday through May 2026)';
+    sel.innerHTML=`<option value="">Pick a Saturday…</option>`;
+    const end=new Date(2026,4,31);
+    let cur=nextSaturday(new Date());
+    while(cur<=end){
+      const v=ymd(cur);
+      const opt=document.createElement('option');
+      opt.value=v; opt.textContent=cur.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:'numeric'});
+      sel.appendChild(opt); cur.setDate(cur.getDate()+7);
+    }
+  }
+  function showCoachNoteForSelected(){
+    const val=document.getElementById('gameday').value;
+    const box=document.getElementById('coachNoteBox');
+    const note = coachNoteMap.get(val) || '';
+    if(note){ box.style.display='block'; box.textContent=note; }
+    else { box.style.display='none'; box.textContent=''; }
+  }
 
-  let GAME_LIST=[]; async function loadSeasonAndGameDays(){ try{ const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'getsettings', division: DIVISION })}); const j=await res.json(); const g=Array.isArray(j.gamedays)? j.gamedays: []; GAME_LIST=g.filter(x=>x.IsBye==='No').map(x=>({date:x.Date,start:x.Start||'',note:x.CoachNote||''})).sort((a,b)=>a.date.localeCompare(b.date)); }catch(e){ document.getElementById('gamesNote').textContent='(Could not load season schedule.)'; GAME_LIST=[]; } }
+  // ====== Roster (division-aware) ======
+  async function loadRoster(){
+    document.getElementById('divBadge').textContent=`Division ${DIVISION}`;
+    const playerSel=document.getElementById('player');
+    const fallback=document.getElementById('rosterFallback');
+    try{
+      const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'roster', division: DIVISION }) });
+      const json=await res.json();
+      const roster=Array.isArray(json?.roster)?json.roster:[];
+      playerSel.innerHTML=`<option value="">Select…</option>`;
+      if(!roster.length){ fallback.style.display='block'; }
+      else{
+        roster.forEach(r=>{ const opt=document.createElement('option'); opt.value=r.player; opt.textContent=r.player; playerSel.appendChild(opt); });
+        fallback.style.display='none';
+      }
+    }catch(e){
+      playerSel.innerHTML=`<option value="">(Roster unavailable)</option>`;
+      fallback.style.display='block';
+    }
+  }
 
-  let PREV_AVAIL=new Map(); let PREV_PRACTICE=new Map(); const EDITING=new Set();
-  function isPastISO(iso){ const t=new Date(); t.setHours(0,0,0,0); const d=new Date(iso+'T00:00:00'); return d<t; }
+  // ====== Submit ======
+  async function submitAll(){
+    const status=document.getElementById('statusMsg'); status.textContent='';
+    const playerSel=document.getElementById('player'); const playerText=document.getElementById('playerText');
+    const player=playerSel.value || (playerText?playerText.value.trim():'');
+    if(!player){ status.innerHTML='<span class="error">Please select or enter your name.</span>'; return; }
 
-  function latestPracticeByDate(rows, player){ const latest=new Map(); const playerKey=norm(player); rows.forEach(r=>{ if((r['Type']||'').toString().toLowerCase()!=='practice') return; const p=(r['Player']||'').toString().trim(); if(norm(p)!==playerKey) return; const div=(r['Division']||'').toString().trim().toUpperCase(); if(div!==DIVISION) return; const date=toISODate(r['Practice Date']); if(!date) return; const ts=new Date(r['Timestamp']).getTime()||0; const rec=latest.get(date); const val={ ts, p68:!!r['Practice: 6-8 AM'], p810:!!r['Practice: 8-10 AM'], p122:!!r['Practice: 12-2 PM'], p710:!!r['Practice: 7-10 PM']}; if(!rec||ts>rec.ts) latest.set(date,val); }); const out=new Map(); latest.forEach((v,k)=>out.set(k,{p68:v.p68,p810:v.p810,p122:v.p122,p710:v.p710})); return out; }
+    const rows=[]; const tbody=document.querySelector('#weekTable tbody');
+    [...tbody.rows].forEach(tr=>{
+      const dayLabel=tr.cells[0].textContent.trim();
+      const date=tr.cells[1].getAttribute('data-date');
+      const p68=tr.querySelector('input[data-slot="p68"]').checked;
+      const p810=tr.querySelector('input[data-slot="p810"]').checked;
+      const p122=tr.querySelector('input[data-slot="p122"]').checked;
+      const p710=tr.querySelector('input[data-slot="p710"]').checked;
+      if(p68||p810||p122||p710) rows.push({ day:dayLabel, date, p68, p810, p122, p710 });
+    });
 
-  function prefillPracticeNextWeek(){ const tbody=document.querySelector('#weekTable tbody'); [...tbody.rows].forEach(tr=>{ const date=tr.cells[1].getAttribute('data-date'); const prev=PREV_PRACTICE.get(date); tr.querySelector('input[data-slot="p68"]').checked=!!prev?.p68; tr.querySelector('input[data-slot="p810"]').checked=!!prev?.p810; tr.querySelector('input[data-slot="p122"]').checked=!!prev?.p122; tr.querySelector('input[data-slot="p710"]').checked=!!prev?.p710; }); const anySelected=[...PREV_PRACTICE.values()].some(v=>v.p68||v.p810||v.p122||v.p710); document.getElementById('submitPracticeBtn').textContent = anySelected? 'Update Practice Availability':'Save Practice Availability'; }
+    try{
+      if(rows.length){
+        await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'submitWeek', player, division: DIVISION, week: rows }) });
+      }
+      const gameDate=document.getElementById('gameday').value||'';
+      const gameAvail=document.getElementById('gameAvailable').checked?'Yes':'';
+      if(gameDate || gameAvail){
+        await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify({ action:'submitGame', player, division: DIVISION, game_date:gameDate, game_available:gameAvail }) });
+      }
+      status.innerHTML='<span class="success">Thanks! Your availability has been submitted.</span>';
+    }catch(e){
+      status.innerHTML='<span class="error">Network or server error. Please try again.</span>';
+    }
+  }
 
-  function latestGameAvailabilityByDate(rows, player){ const map=new Map(); const playerKey=norm(player); rows.forEach(r=>{ if((r['Type']||'').toString().toLowerCase()!=='game') return; const p=(r['Player']||'').toString().trim(); if(norm(p)!==playerKey) return; const div=(r['Division']||'').toString().trim().toUpperCase(); if(div!==DIVISION) return; const date=toISODate(r['Game Date']); if(!date) return; const ts=new Date(r['Timestamp']).getTime()||0; const val=(r['Available for Game?']||'').toString().trim()||''; const curr=map.get(date); if(!curr||ts>curr.ts) map.set(date,{ts,val}); }); const out=new Map(); map.forEach((v,k)=>out.set(k,v.val)); return out; }
-
-  function renderGamesTable(playerAvailabilityMap){ const tb=document.querySelector('#gamesTable tbody'); tb.innerHTML=''; const existing=playerAvailabilityMap||new Map(); const showPast=document.getElementById('showPast').checked; (GAME_LIST||[]).filter(g=>showPast||!isPastISO(g.date)).forEach(g=>{ const prev=existing.get(g.date)||''; const isRO=!!prev && !EDITING.has(g.date); const d=new Date(g.date+'T00:00:00'); const yesChecked=(prev==='Yes'); const noChecked=(prev==='No'); const disabledAttr=isRO?'disabled':''; const roClass=isRO?'ro':''; const tr=document.createElement('tr'); tr.setAttribute('data-date',g.date); tr.innerHTML=`<td class="nowrap ${roClass}">${d.toLocaleDateString(undefined,{weekday:'short'})}</td><td class="nowrap ${roClass}">${d.toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</td><td class="nowrap ${roClass}">${displayStart(g.start)}</td><td class="${roClass}">${g.note? `<div class=\"coachnote\">${g.note}</div>`:''}</td><td class="nowrap ${roClass}"><label><input type=\"radio\" name=\"avail-${g.date}\" value=\"Yes\" ${yesChecked?'checked':''} ${disabledAttr}/> Yes</label></td><td class="nowrap ${roClass}"><label><input type=\"radio\" name=\"avail-${g.date}\" value=\"No\" ${noChecked?'checked':''} ${disabledAttr}/> No</label></td><td class="nowrap">${ prev ? `<button class=\"editBtn\" data-date=\"${g.date}\">${EDITING.has(g.date)?'Done':'Edit'}</button>` : '<span class=\"muted\">—</span>' }</td>`; tb.appendChild(tr); }); tb.querySelectorAll('button.editBtn').forEach(btn=>{ btn.addEventListener('click',()=>{ const date=btn.getAttribute('data-date'); if(EDITING.has(date)) EDITING.delete(date); else EDITING.add(date); renderGamesTable(existing); }); }); }
-
-  function showLoading(){ const el=document.getElementById('loadingOverlay'); el.style.display='flex'; el.setAttribute('aria-hidden','false'); }
-  function hideLoading(){ const el=document.getElementById('loadingOverlay'); el.style.display='none'; el.setAttribute('aria-hidden','true'); }
-
-  async function refreshForPlayer(){ const playerSel=document.getElementById('player'); const playerText=document.getElementById('playerText'); const player=playerSel.value || (playerText?playerText.value.trim():''); showLoading(); try{ // ensure spinner paints before fetch
-      await new Promise(requestAnimationFrame); // yield a frame
-      if(!player){ PREV_AVAIL=new Map(); PREV_PRACTICE=new Map(); EDITING.clear(); renderGamesTable(new Map()); prefillPracticeNextWeek(); return; } const res=await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'read', division: DIVISION })}); const json=await res.json(); const rows=json.rows||[]; PREV_AVAIL=latestGameAvailabilityByDate(rows, player); PREV_PRACTICE=latestPracticeByDate(rows, player); EDITING.clear(); prefillPracticeNextWeek(); renderGamesTable(PREV_AVAIL); }catch(e){ PREV_AVAIL=new Map(); PREV_PRACTICE=new Map(); EDITING.clear(); prefillPracticeNextWeek(); renderGamesTable(new Map()); } finally { hideLoading(); } }
-
-  async function savePractice(){ const status=document.getElementById('practiceStatus'); status.textContent=''; const playerSel=document.getElementById('player'); const playerText=document.getElementById('playerText'); const player=playerSel.value || (playerText?playerText.value.trim():''); if(!player){ status.innerHTML='<span class="error">Please select or enter your name.</span>'; return; } const tbody=document.querySelector('#weekTable tbody'); const toSend=[]; let changed=0; [...tbody.rows].forEach(tr=>{ const date=tr.cells[1].getAttribute('data-date'); const now={ day:tr.cells[0].textContent.trim(), date, p68:tr.querySelector('input[data-slot="p68"]').checked, p810:tr.querySelector('input[data-slot="p810"]').checked, p122:tr.querySelector('input[data-slot="p122"]').checked, p710:tr.querySelector('input[data-slot="p710"]').checked, }; const prev=PREV_PRACTICE.get(date)||{p68:false,p810:false,p122:false,p710:false}; const diff=(now.p68!==prev.p68)||(now.p810!==prev.p810)||(now.p122!==prev.p122)||(now.p710!==prev.p710); if(diff){ changed++; toSend.push(now);} }); try{ showLoading(); await new Promise(requestAnimationFrame); if(toSend.length){ await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'submitweek', player, division: DIVISION, week: toSend })}); } status.innerHTML = changed ? `<span class="success">Saved ${changed} day(s) for next week.</span>` : 'No changes to save.'; await refreshForPlayer(); }catch(e){ status.innerHTML='<span class="error">Network or server error. Please try again.</span>'; } finally { hideLoading(); } }
-
-  async function saveAllGames(){ const status=document.getElementById('gamesStatus'); status.textContent=''; const playerSel=document.getElementById('player'); const playerText=document.getElementById('playerText'); const player=playerSel.value || (playerText?playerText.value.trim():''); if(!player){ status.innerHTML='<span class="error">Please select or enter your name.</span>'; return; } const showPast=document.getElementById('showPast').checked; const updates=[]; (GAME_LIST||[]).forEach(g=>{ if(!showPast && isPastISO(g.date)) return; const yes=document.querySelector(`input[name="avail-${g.date}"][value="Yes"]`); const no=document.querySelector(`input[name="avail-${g.date}"][value="No"]`); const selVal=yes?.checked ? 'Yes' : (no?.checked ? 'No' : ''); const prev=PREV_AVAIL.get(g.date)||''; const edited=EDITING.has(g.date); if((prev==='' && selVal) || (edited && selVal && selVal!==prev)) updates.push({date:g.date, val:selVal}); }); if(!updates.length){ status.textContent='No changes to save.'; return; } try{ showLoading(); await new Promise(requestAnimationFrame); await Promise.all(updates.map(u=> fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'submitgame', player, division: DIVISION, game_date:u.date, game_available:u.val }) }))); status.innerHTML = `<span class="success">Saved ${updates.length} update(s).</span>`; EDITING.clear(); await refreshForPlayer(); }catch(e){ status.innerHTML='<span class="error">Network or server error. Please try again.</span>'; } finally { hideLoading(); } }
-
-  function wireEvents(){ document.getElementById('player').addEventListener('change', refreshForPlayer); document.getElementById('playerText')?.addEventListener('blur', refreshForPlayer); document.getElementById('showPast').addEventListener('change', ()=> renderGamesTable(PREV_AVAIL)); document.getElementById('submitPracticeBtn').addEventListener('click', savePractice); document.getElementById('saveGamesBtn').addEventListener('click', saveAllGames); }
-
-  async function init(){ buildWeekTable(); showLoading(); try { await loadRoster(); await loadSeasonAndGameDays(); wireEvents(); await refreshForPlayer(); } finally { hideLoading(); } }
-
-  init();
+  // Init
+  buildWeekTable();
+  loadSeasonAndGameDays();
+  loadRoster();
+  document.getElementById('gameday').addEventListener('change', showCoachNoteForSelected);
+  document.getElementById('submitBtn').addEventListener('click', submitAll);
 </script>
 </body>
 </html>
