@@ -197,7 +197,7 @@
     document.getElementById('seasonStart').value=(settings.SeasonStart||'').split('T')[0]||'';
     document.getElementById('seasonEnd').value=(settings.SeasonEnd||'').split('T')[0]||'';
     const tb=document.querySelector('#gamedaysTable tbody'); tb.innerHTML='';
-    // Include both seeded Saturdays and any ad-hoc game dates from GameDays
+    // Combine seeded Saturdays + any existing ad-hoc game dates
     const seeded = listSatsBetween(settings.SeasonStart, settings.SeasonEnd);
     const extra = (gamedays||[]).map(g=>g.Date).filter(d=>!seeded.includes(d));
     const allDates = [...new Set([...seeded, ...extra])].sort();
@@ -205,19 +205,17 @@
 
     allDates.forEach(date=>{
       const meta= byDate.get(date) || { IsBye:'No', Start:'', CoachNote:'' };
-      const isExisting = byDate.has(date);
       const tr=document.createElement('tr');
-      const startSelId = `start-${date}`;
       tr.innerHTML=`
         <td>${new Date(date+'T00:00:00').toLocaleDateString(undefined,{weekday:'short', month:'short', day:'numeric', year:'numeric'})}</td>
         <td>
-          <select data-date="${date}" data-field="isbye" ${isExisting? '':'') } class="${isExisting?'':' '}">
+          <select data-date="${date}" data-field="isbye">
             <option value="No" ${meta.IsBye==='No'?'selected':''}>No</option>
             <option value="Yes" ${meta.IsBye==='Yes'?'selected':''}>Yes</option>
           </select>
         </td>
         <td>
-          <select id="${startSelId}" data-date="${date}" data-field="start" ${meta.IsBye==='Yes' ? 'disabled':''}>
+          <select data-date="${date}" data-field="start" ${meta.IsBye==='Yes' ? 'disabled':''}>
             ${TIME_OPTS.map(opt=>`<option value="${opt}" ${String(timeLabel(meta.Start))===opt?'selected':''}>${opt}</option>`).join('')}
           </select>
         </td>
@@ -231,7 +229,6 @@
       tb.appendChild(tr);
     });
 
-    // enable/disable start on bye toggle
     tb.querySelectorAll('select[data-field="isbye"]').forEach(sel=>{
       sel.addEventListener('change', ()=>{
         const date=sel.getAttribute('data-date');
@@ -240,7 +237,6 @@
       });
     });
 
-    // Save handler (per row)
     tb.querySelectorAll('button[data-save]').forEach(btn=>{
       btn.addEventListener('click', async ()=>{
         const date=btn.getAttribute('data-save');
