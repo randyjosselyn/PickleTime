@@ -130,6 +130,9 @@
     return t;
   }
 
+  // ====== Roster/name normalization ======
+  const norm = s => (s||'').toString().trim().toUpperCase();
+
   // ====== Practice week table (Sun–Fri) ======
   function buildWeekTable(){
     const tbody=document.querySelector('#weekTable tbody'); tbody.innerHTML='';
@@ -198,9 +201,10 @@
   // --- practice latest map for next week ---
   function latestPracticeByDate(rows, player){
     const latest = new Map(); // key: date -> {ts, p68,p810,p122,p710}
+    const playerKey = norm(player);
     rows.forEach(r=>{
       if ((r['Type']||'').toString().toLowerCase()!=='practice') return;
-      const p=(r['Player']||'').toString().trim(); if(p!==player) return;
+      const p=(r['Player']||'').toString().trim(); if(norm(p)!==playerKey) return;
       const div=(r['Division']||'').toString().trim().toUpperCase(); if(div!==DIVISION) return;
       const date = toISODate(r['Practice Date']); if(!date) return;
       const ts = new Date(r['Timestamp']).getTime()||0;
@@ -227,9 +231,10 @@
   // --- game latest map by date ---
   function latestGameAvailabilityByDate(rows, player){
     const map = new Map(); // key: date -> {ts, val}
+    const playerKey = norm(player);
     rows.forEach(r => {
       if ((r['Type']||'').toString().toLowerCase()!=='game') return;
-      const p = (r['Player']||'').toString().trim(); if (p!==player) return;
+      const p = (r['Player']||'').toString().trim(); if (norm(p)!==playerKey) return;
       const div = (r['Division']||'').toString().trim().toUpperCase(); if (div!==DIVISION) return;
       const date = toISODate(r['Game Date']); if (!date) return;
       const ts = new Date(r['Timestamp']).getTime()||0;
