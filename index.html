@@ -5,9 +5,9 @@
   <title>Pickleball Team Availability</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { --green:#2c6e49; --green2:#3d8b63; --bg:#f7f7f7; }
-    body { font-family: Arial, sans-serif; margin: 24px; background: var(--bg); }
-    .container { max-width: 1000px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+    :root { --green:#2c6e49; --green2:#3d8b63; --bg:#f7f7f7; --text:#1a1a1a; }
+    body { font-family: Arial, sans-serif; margin: 24px; background: var(--bg); color:var(--text); }
+    .container { max-width: 1000px; margin: 0 auto; background:#fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.06); position: relative; }
     h1 { margin: 0 0 8px; color:var(--green); font-size: 24px; }
     .toplinks { display:flex; gap:10px; margin-bottom:16px; }
     .toplinks a { color: var(--green); text-decoration:none; font-size:14px; }
@@ -24,14 +24,22 @@
     .success { color:#0a7d33; font-weight:bold; }
     .error { color:#b00020; font-weight:bold; }
     .coachnote { background:#fffbe6; border:1px solid #f0e6a2; padding:6px 10px; border-radius:8px; white-space:pre-wrap; }
-    .actions { display:flex; gap:10px; align-items:center; }
+    .actions { display:flex; gap:10px; align-items:center; justify-content: space-between; flex-wrap: wrap; }
+    .actions-left { display:flex; gap:10px; align-items:center; flex-wrap: wrap; }
     .nowrap { white-space: nowrap; }
     .muted { color:#777; font-size:12px; }
     .ro { opacity:.75; }
+
+    /* Loading overlay */
+    .overlay { position:absolute; inset:0; background:rgba(255,255,255,.65); display:none; align-items:center; justify-content:center; z-index: 10; backdrop-filter: blur(2px); }
+    .spinner { width:48px; height:48px; border-radius:50%; border:4px solid #cde3d7; border-top-color: var(--green); animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
 <div class="container">
+  <div class="overlay" id="loadingOverlay" aria-hidden="true"><div class="spinner" aria-label="Loading"></div></div>
+
   <div class="toplinks">
     <a href="./admin.html">Go to Admin Dashboard →</a>
   </div>
@@ -50,12 +58,15 @@
 
   <!-- Practice section -->
   <div class="section">
-    <div class="actions" style="justify-content: space-between; flex-wrap: wrap;">
+    <div class="actions">
       <div>
         <label>Are you available to practice next week?</label>
         <div class="note" id="weekRangeNote">—</div>
       </div>
-      <button id="submitPracticeBtn">Save Practice Availability</button>
+      <div class="actions-left">
+        <span id="practiceStatus" class="note"></span>
+        <button id="submitPracticeBtn">Save Practice Availability</button>
+      </div>
     </div>
     <table id="weekTable">
       <thead>
@@ -65,7 +76,6 @@
       </thead>
       <tbody></tbody>
     </table>
-    <p id="practiceStatus" class="note" style="margin-top:8px;"></p>
   </div>
 
   <!-- Games section: radio Yes/No per game + Save All + Show Past toggle -->
@@ -226,6 +236,10 @@
       tr.querySelector('input[data-slot="p122"]').checked = !!prev?.p122;
       tr.querySelector('input[data-slot="p710"]').checked = !!prev?.p710;
     });
+
+    // Update button label: Save vs Update
+    const anySelected = [...PREV_PRACTICE.values()].some(v => v.p68||v.p810||v.p122||v.p710);
+    document.getElementById('submitPracticeBtn').textContent = anySelected ? 'Update Practice Availability' : 'Save Practice Availability';
   }
 
   // --- game latest map by date ---
@@ -290,13 +304,18 @@
     });
   }
 
+  // ====== Loading overlay helpers ======
+  function showLoading(){ const el=document.getElementById('loadingOverlay'); el.style.display='flex'; el.setAttribute('aria-hidden','false'); }
+  function hideLoading(){ const el=document.getElementById('loadingOverlay'); el.style.display='none'; el.setAttribute('aria-hidden','true'); }
+
   // ====== Load & hydrate on player selection ======
   async function refreshForPlayer(){
     const playerSel=document.getElementById('player');
     const playerText=document.getElementById('playerText');
     const player = playerSel.value || (playerText?playerText.value.trim():'');
-    if (!player){ PREV_AVAIL = new Map(); PREV_PRACTICE=new Map(); EDITING.clear(); renderGamesTable(new Map()); prefillPracticeNextWeek(); return; }
+    showLoading();
     try{
+      if (!player){ PREV_AVAIL = new Map(); PREV_PRACTICE=new Map(); EDITING.clear(); renderGamesTable(new Map()); prefillPracticeNextWeek(); return; }
       const res = await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'read', division: DIVISION }) });
       const json = await res.json();
       const rows = json.rows || [];
@@ -307,6 +326,7 @@
       prefillPracticeNextWeek();
       renderGamesTable(PREV_AVAIL);
     }catch(e){ PREV_AVAIL = new Map(); PREV_PRACTICE=new Map(); EDITING.clear(); prefillPracticeNextWeek(); renderGamesTable(new Map()); }
+    finally{ hideLoading(); }
   }
 
   // ====== Save handlers ======
@@ -334,6 +354,7 @@
     });
 
     try{
+      showLoading();
       if(toSend.length){
         await fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'submitweek', player, division: DIVISION, week: toSend }) });
       }
@@ -341,6 +362,7 @@
       // reload maps after save
       await refreshForPlayer();
     }catch(e){ status.innerHTML='<span class="error">Network or server error. Please try again.</span>'; }
+    finally{ hideLoading(); }
   }
 
   async function saveAllGames(){
@@ -367,6 +389,7 @@
     if (!updates.length){ status.textContent='No changes to save.'; return; }
 
     try{
+      showLoading();
       await Promise.all(updates.map(u =>
         fetch(API_URL,{ method:'POST', headers:{'Content-Type':'application/json;charset=utf-8'}, body: JSON.stringify({ action:'submitgame', player, division: DIVISION, game_date:u.date, game_available:u.val }) })
       ));
@@ -374,6 +397,7 @@
       EDITING.clear();
       await refreshForPlayer();
     }catch(e){ status.innerHTML='<span class="error">Network or server error. Please try again.</span>'; }
+    finally{ hideLoading(); }
   }
 
   function wireEvents(){
@@ -386,10 +410,15 @@
 
   async function init(){
     buildWeekTable();
-    await loadRoster();
-    await loadSeasonAndGameDays();
-    wireEvents();
-    await refreshForPlayer();
+    showLoading();
+    try{
+      await loadRoster();
+      await loadSeasonAndGameDays();
+      wireEvents();
+      await refreshForPlayer();
+    } finally {
+      hideLoading();
+    }
   }
 
   init();
